@@ -1,4 +1,4 @@
-import type { OAuthStep, JwtSection, JwtField } from "../types/security";
+import type { OAuthStep, JwtSection, JwtField, TlsStep, AuthMethodComparison, RbacRole, AbacPolicy } from "../types/security";
 
 export const OAUTH_STEPS: OAuthStep[] = [
   {
@@ -126,5 +126,215 @@ export const JWT_SECTIONS: JwtSection[] = [
       { key: "input", value: "header.payload", description: "Base64url encoded header + payload", descriptionJa: "Base64urlエンコードされたheader + payload" },
       { key: "key", value: "Private Key", description: "Server's RSA private key signs the token", descriptionJa: "サーバーのRSA秘密鍵でトークンに署名" },
     ],
+  },
+];
+
+// === TLS Deep Dive Steps ===
+export const TLS_DEEP_STEPS: TlsStep[] = [
+  {
+    stepNumber: 1, name: "TCP Handshake", nameJa: "TCPハンドシェイク",
+    direction: "both",
+    description: "TCP 3-way handshake establishes reliable transport. SYN → SYN-ACK → ACK. Consumes 1 RTT.",
+    descriptionJa: "TCP 3ウェイハンドシェイクで信頼性のある転送路を確立。SYN → SYN-ACK → ACK。1 RTT消費。",
+    osiLayer: 4,
+    dataFields: [
+      { name: "SYN", value: "seq=0" },
+      { name: "SYN-ACK", value: "seq=0, ack=1" },
+      { name: "ACK", value: "seq=1, ack=1" },
+    ],
+  },
+  {
+    stepNumber: 2, name: "ClientHello", nameJa: "ClientHello",
+    direction: "client-to-server",
+    description: "Client sends supported TLS versions, cipher suites, key_share extension (X25519), SNI, and random bytes.",
+    descriptionJa: "クライアントが対応TLSバージョン、暗号スイート、key_share拡張(X25519)、SNI、ランダムバイトを送信。",
+    cryptoDetails: "TLS 1.3 only. Key share enables 1-RTT handshake by sending public key upfront.",
+    cryptoDetailsJa: "TLS 1.3専用。公開鍵を先行送信することで1-RTTハンドシェイクを実現。",
+    osiLayer: 6,
+    dataFields: [
+      { name: "Version", value: "TLS 1.3 (0x0304)" },
+      { name: "Cipher Suites", value: "TLS_AES_256_GCM_SHA384, TLS_CHACHA20_POLY1305" },
+      { name: "Key Share", value: "X25519 public key (32 bytes)" },
+      { name: "SNI", value: "example.com" },
+    ],
+  },
+  {
+    stepNumber: 3, name: "ServerHello", nameJa: "ServerHello",
+    direction: "server-to-client",
+    description: "Server selects cipher suite and key share group. Sends its X25519 public key for ECDHE.",
+    descriptionJa: "サーバーが暗号スイートと鍵共有グループを選択。ECDHE用のX25519公開鍵を送信。",
+    cryptoDetails: "Selected: TLS_AES_256_GCM_SHA384 with X25519 ECDHE.",
+    cryptoDetailsJa: "選択: TLS_AES_256_GCM_SHA384 + X25519 ECDHE。",
+    osiLayer: 6,
+    dataFields: [
+      { name: "Selected Cipher", value: "TLS_AES_256_GCM_SHA384" },
+      { name: "Key Share", value: "X25519 public key (32 bytes)" },
+    ],
+  },
+  {
+    stepNumber: 4, name: "EncryptedExtensions", nameJa: "暗号化拡張",
+    direction: "server-to-client",
+    description: "Server sends extensions that are not needed for key exchange, now encrypted with handshake keys.",
+    descriptionJa: "サーバーが鍵交換に不要な拡張を送信。ハンドシェイク鍵で暗号化済み。",
+    cryptoDetails: "From this point, all server messages are encrypted with handshake traffic keys derived from ECDHE shared secret.",
+    cryptoDetailsJa: "この時点から、すべてのサーバーメッセージはECDHE共有秘密から導出されたハンドシェイクトラフィック鍵で暗号化。",
+    osiLayer: 6,
+    dataFields: [
+      { name: "ALPN", value: "h2 (HTTP/2)" },
+    ],
+  },
+  {
+    stepNumber: 5, name: "Certificate", nameJa: "証明書",
+    direction: "server-to-client",
+    description: "Server sends X.509 certificate chain: leaf cert → intermediate CA → (implicit) root CA.",
+    descriptionJa: "サーバーがX.509証明書チェーンを送信: リーフ証明書 → 中間CA → (暗黙の) ルートCA。",
+    cryptoDetails: "Client verifies: signature chain, hostname match (SAN), expiry, revocation (OCSP/CRL).",
+    cryptoDetailsJa: "クライアントが検証: 署名チェーン、ホスト名一致(SAN)、有効期限、失効確認(OCSP/CRL)。",
+    osiLayer: 6,
+    dataFields: [
+      { name: "Subject", value: "CN=example.com" },
+      { name: "Issuer", value: "CN=Let's Encrypt Authority X3" },
+      { name: "Validity", value: "90 days" },
+      { name: "Key", value: "EC P-256 (256 bits)" },
+    ],
+  },
+  {
+    stepNumber: 6, name: "CertificateVerify", nameJa: "証明書検証",
+    direction: "server-to-client",
+    description: "Server proves ownership of private key by signing the handshake transcript hash.",
+    descriptionJa: "サーバーがハンドシェイクトランスクリプトのハッシュに署名して秘密鍵の所有を証明。",
+    cryptoDetails: "Signature algorithm: ECDSA with SHA-256 over transcript hash. Prevents replay attacks.",
+    cryptoDetailsJa: "署名アルゴリズム: トランスクリプトハッシュに対するECDSA+SHA-256。リプレイ攻撃を防止。",
+    osiLayer: 6,
+    dataFields: [
+      { name: "Algorithm", value: "ECDSA-SHA256" },
+      { name: "Input", value: "SHA-256(handshake_messages)" },
+    ],
+  },
+  {
+    stepNumber: 7, name: "Server Finished", nameJa: "サーバーFinished",
+    direction: "server-to-client",
+    description: "Server sends Finished message with HMAC of entire handshake. Confirms key derivation is consistent.",
+    descriptionJa: "サーバーがハンドシェイク全体のHMAC付きFinishedメッセージを送信。鍵導出の一貫性を確認。",
+    cryptoDetails: "HMAC-SHA384 over handshake transcript using server handshake traffic secret.",
+    cryptoDetailsJa: "サーバーハンドシェイクトラフィックシークレットを使用したトランスクリプトのHMAC-SHA384。",
+    osiLayer: 6,
+    dataFields: [
+      { name: "Verify Data", value: "HMAC-SHA384(finished_key, transcript)" },
+    ],
+  },
+  {
+    stepNumber: 8, name: "Client Finished", nameJa: "クライアントFinished",
+    direction: "client-to-server",
+    description: "Client verifies server's Finished, computes ECDHE shared secret, derives application traffic keys, sends its Finished.",
+    descriptionJa: "クライアントがサーバーのFinishedを検証、ECDHE共有秘密を計算、アプリケーショントラフィック鍵を導出、自身のFinishedを送信。",
+    cryptoDetails: "Key schedule: ECDHE → HKDF-Extract → Derive-Secret → handshake keys → application keys. Forward secrecy achieved.",
+    cryptoDetailsJa: "鍵スケジュール: ECDHE → HKDF-Extract → Derive-Secret → ハンドシェイク鍵 → アプリケーション鍵。前方秘匿性を達成。",
+    osiLayer: 6,
+    dataFields: [
+      { name: "Key Derivation", value: "HKDF-SHA384" },
+      { name: "Application Keys", value: "AES-256-GCM + IV (per direction)" },
+      { name: "Total RTT", value: "1-RTT (after TCP)" },
+    ],
+  },
+];
+
+// === Session vs Token Comparison ===
+export const AUTH_COMPARISON: AuthMethodComparison[] = [
+  {
+    aspect: "Storage", aspectJa: "保存場所",
+    session: { value: "Server-side (memory/DB/Redis)", valueJa: "サーバー側 (メモリ/DB/Redis)", pros: "No sensitive data on client", prosJa: "クライアントに機密データなし", cons: "Server state scales with users", consJa: "サーバー状態がユーザー数に比例" },
+    token: { value: "Client-side (localStorage/cookie)", valueJa: "クライアント側 (localStorage/cookie)", pros: "Stateless server, easy to scale", prosJa: "ステートレスサーバー、スケール容易", cons: "Token theft risk (XSS)", consJa: "トークン盗難リスク (XSS)" },
+  },
+  {
+    aspect: "Scalability", aspectJa: "スケーラビリティ",
+    session: { value: "Requires sticky sessions or shared store", valueJa: "スティッキーセッションまたは共有ストアが必要", pros: "Simple for single-server", prosJa: "シングルサーバーではシンプル", cons: "Hard to scale horizontally", consJa: "水平スケールが困難" },
+    token: { value: "Any server can validate independently", valueJa: "任意のサーバーが独立して検証可能", pros: "Perfect for microservices", prosJa: "マイクロサービスに最適", cons: "Token size grows with claims", consJa: "クレーム増加でトークンサイズ増大" },
+  },
+  {
+    aspect: "Revocation", aspectJa: "無効化",
+    session: { value: "Delete session from store", valueJa: "ストアからセッション削除", pros: "Immediate revocation", prosJa: "即時無効化", cons: "Need access to session store", consJa: "セッションストアへのアクセスが必要" },
+    token: { value: "Wait for expiry or use blocklist", valueJa: "期限切れ待ちまたはブロックリスト", pros: "No central store needed", prosJa: "中央ストア不要", cons: "Hard to revoke before expiry", consJa: "期限前の無効化が困難" },
+  },
+  {
+    aspect: "Size", aspectJa: "サイズ",
+    session: { value: "Small session ID (~32 bytes)", valueJa: "小さなセッションID (~32バイト)", pros: "Minimal bandwidth", prosJa: "最小限の帯域幅", cons: "Requires server lookup", consJa: "サーバールックアップが必要" },
+    token: { value: "JWT can be 1KB+ with claims", valueJa: "JWTはクレーム付きで1KB以上", pros: "Self-contained, no lookup", prosJa: "自己完結型、ルックアップ不要", cons: "Larger per-request overhead", consJa: "リクエストごとのオーバーヘッド大" },
+  },
+  {
+    aspect: "CSRF Protection", aspectJa: "CSRF対策",
+    session: { value: "Needs CSRF token (cookie-based)", valueJa: "CSRFトークンが必要 (cookieベース)", pros: "Proven pattern (SameSite + token)", prosJa: "実績のあるパターン (SameSite + トークン)", cons: "Extra implementation work", consJa: "追加の実装作業" },
+    token: { value: "Immune if stored in header/localStorage", valueJa: "ヘッダ/localStorageなら影響なし", pros: "No CSRF concern with Bearer", prosJa: "Bearerトークンはcsrf不要", cons: "XSS becomes the threat vector", consJa: "XSSが脅威ベクトルに" },
+  },
+  {
+    aspect: "Cross-Domain", aspectJa: "クロスドメイン",
+    session: { value: "Limited to same origin (cookies)", valueJa: "同一オリジンに限定 (cookie)", pros: "Built-in browser security", prosJa: "ブラウザ組み込みセキュリティ", cons: "Complex for multi-domain", consJa: "マルチドメインでは複雑" },
+    token: { value: "Works across any domain (CORS)", valueJa: "任意のドメインで動作 (CORS)", pros: "Ideal for APIs / SPAs", prosJa: "API / SPAに最適", cons: "Needs careful CORS config", consJa: "慎重なCORS設定が必要" },
+  },
+];
+
+// === RBAC Roles ===
+export const RBAC_ROLES: RbacRole[] = [
+  {
+    name: "Admin", nameJa: "管理者",
+    permissions: ["users:read", "users:write", "users:delete", "posts:read", "posts:write", "posts:delete", "settings:manage"],
+    color: "#ff4d4f",
+  },
+  {
+    name: "Editor", nameJa: "編集者",
+    permissions: ["posts:read", "posts:write", "posts:delete", "users:read"],
+    color: "#faad14",
+  },
+  {
+    name: "Author", nameJa: "著者",
+    permissions: ["posts:read", "posts:write"],
+    color: "#1677ff",
+  },
+  {
+    name: "Viewer", nameJa: "閲覧者",
+    permissions: ["posts:read", "users:read"],
+    color: "#52c41a",
+  },
+];
+
+export const ALL_PERMISSIONS = [
+  "users:read", "users:write", "users:delete",
+  "posts:read", "posts:write", "posts:delete",
+  "settings:manage",
+];
+
+// === ABAC Policies ===
+export const ABAC_POLICIES: AbacPolicy[] = [
+  {
+    subject: "User (role=editor, dept=marketing)",
+    resource: "Document (type=report, dept=marketing)",
+    action: "edit",
+    condition: "subject.dept == resource.dept AND subject.role IN ['editor', 'admin']",
+    conditionJa: "subject.dept == resource.dept AND subject.role IN ['editor', 'admin']",
+    result: "allow",
+  },
+  {
+    subject: "User (role=editor, dept=engineering)",
+    resource: "Document (type=report, dept=marketing)",
+    action: "edit",
+    condition: "subject.dept == resource.dept → FALSE",
+    conditionJa: "subject.dept == resource.dept → FALSE",
+    result: "deny",
+  },
+  {
+    subject: "User (role=admin, dept=any)",
+    resource: "Document (type=any, dept=any)",
+    action: "delete",
+    condition: "subject.role == 'admin' AND time.hour BETWEEN 9 AND 17",
+    conditionJa: "subject.role == 'admin' AND time.hour BETWEEN 9 AND 17",
+    result: "allow",
+  },
+  {
+    subject: "User (role=viewer, ip=10.0.0.x)",
+    resource: "Document (classification=confidential)",
+    action: "read",
+    condition: "resource.classification != 'confidential' OR subject.clearance >= 'secret'",
+    conditionJa: "resource.classification != 'confidential' OR subject.clearance >= 'secret'",
+    result: "deny",
   },
 ];

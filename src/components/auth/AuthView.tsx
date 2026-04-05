@@ -4,6 +4,9 @@ import { authSubView, setAuthSubView } from "../../state/security-state";
 import type { AuthSubView } from "../../types/security";
 import OAuthFlow from "./OAuthFlow";
 import JwtInspector from "./JwtInspector";
+import TlsDeepDive from "./TlsDeepDive";
+import AuthComparison from "./AuthComparison";
+import PermissionModel from "./PermissionModel";
 import "./AuthView.css";
 
 interface SubTab {
@@ -20,16 +23,6 @@ const SUB_TABS: SubTab[] = [
   { id: "session-vs-token", label: "Session vs Token", labelJa: "セッション vs トークン", icon: "⇄" },
   { id: "rbac", label: "RBAC/ABAC", labelJa: "RBAC/ABAC", icon: "⊞" },
 ];
-
-function PlaceholderSubView(props: { name: string }) {
-  return (
-    <div class="auth-placeholder">
-      <span class="ph-icon">◇</span>
-      <span>{props.name}</span>
-      <span class="ph-note">Coming in Phase 5...</span>
-    </div>
-  );
-}
 
 export default function AuthView() {
   const { t } = useI18n();
@@ -66,13 +59,13 @@ export default function AuthView() {
             <JwtInspector />
           </Match>
           <Match when={authSubView() === "tls-deep"}>
-            <PlaceholderSubView name={t("TLS詳細解析", "TLS Deep Dive")} />
+            <TlsDeepDive />
           </Match>
           <Match when={authSubView() === "session-vs-token"}>
-            <PlaceholderSubView name={t("セッション vs トークン比較", "Session vs Token Comparison")} />
+            <AuthComparison />
           </Match>
           <Match when={authSubView() === "rbac"}>
-            <PlaceholderSubView name={t("RBAC / ABAC モデル", "RBAC / ABAC Models")} />
+            <PermissionModel />
           </Match>
         </Switch>
       </div>
