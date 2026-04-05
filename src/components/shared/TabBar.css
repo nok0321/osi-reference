@@ -34,7 +34,25 @@
   color: var(--glow-color);
   background: var(--bg-card);
   border-color: var(--glow-color);
-  box-shadow: 0 0 8px var(--glow-color-dim);
+  box-shadow: 0 0 12px var(--glow-color-dim), 0 0 4px var(--glow-color-dim);
+}
+
+.tab-item.active::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 10%;
+  width: 80%;
+  height: 2px;
+  background: var(--glow-color);
+  border-radius: 1px;
+  box-shadow: 0 0 6px var(--glow-color);
+  animation: traceGlow 1.5s ease-in-out infinite;
+}
+
+@keyframes traceGlow {
+  0%, 100% { opacity: 0.6; box-shadow: 0 0 4px var(--glow-color); }
+  50% { opacity: 1; box-shadow: 0 0 10px var(--glow-color), 0 1px 6px var(--glow-color); }
 }
 
 .tab-icon {

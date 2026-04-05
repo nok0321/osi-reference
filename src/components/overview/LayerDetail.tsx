@@ -1,9 +1,11 @@
-import { Show, For } from "solid-js";
+import { Show, For, createMemo } from "solid-js";
 import { getLayer } from "../../data/layers";
 import { getLayerColor } from "../../utils/colors";
 import { useI18n } from "../../i18n/context";
+import { OSI_ATTACKS, SEVERITY_COLORS } from "../../data/security-attacks";
 import ProtocolBadge from "../shared/ProtocolBadge";
 import type { LayerNumber } from "../../types";
+import type { OsiAttack } from "../../types/security";
 import "./LayerDetail.css";
 
 interface LayerDetailProps {
@@ -14,6 +16,9 @@ export default function LayerDetail(props: LayerDetailProps) {
   const { t } = useI18n();
   const layer = () => props.layerNumber ? getLayer(props.layerNumber) : undefined;
   const color = () => props.layerNumber ? getLayerColor(props.layerNumber) : null;
+  const layerAttacks = createMemo(() =>
+    props.layerNumber ? OSI_ATTACKS.filter((a: OsiAttack) => a.layer === props.layerNumber) : []
+  );
 
   return (
     <div class="layer-detail">
@@ -83,8 +88,10 @@ export default function LayerDetail(props: LayerDetailProps) {
             <div class="detail-section">
               <h3>{t("関連デバイス", "Devices")}</h3>
               <div class="device-list">
-                <For each={t(l().devicesJa, l().devices) === l().devicesJa ? l().devicesJa : l().devices}>
-                  {(device) => <span class="device-badge">{device}</span>}
+                <For each={l().devicesJa}>
+                  {(device, i) => (
+                    <span class="device-badge">{t(device, l().devices[i()])}</span>
+                  )}
                 </For>
               </div>
             </div>
@@ -99,6 +106,28 @@ export default function LayerDetail(props: LayerDetailProps) {
                         <span class="field-name mono">{field.name}</span>
                         <span class="field-bits mono">{field.bits}bit</span>
                         <span class="field-desc">{t(field.descriptionJa, field.description)}</span>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </div>
+            </Show>
+
+            <Show when={layerAttacks().length > 0}>
+              <div class="detail-section security-section">
+                <h3>{t("セキュリティ脅威", "Security Threats")}</h3>
+                <div class="security-threats">
+                  <For each={layerAttacks()}>
+                    {(attack: OsiAttack) => (
+                      <div class="threat-row">
+                        <span
+                          class="threat-sev"
+                          style={{ background: SEVERITY_COLORS[attack.severity] }}
+                        >
+                          {attack.severity[0].toUpperCase()}
+                        </span>
+                        <span class="threat-name">{t(attack.nameJa, attack.name)}</span>
+                        <span class="threat-mit">{t(attack.mitigationJa, attack.mitigation)}</span>
                       </div>
                     )}
                   </For>

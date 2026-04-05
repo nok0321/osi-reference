@@ -65,6 +65,25 @@
   gap: 1rem;
 }
 
+.tls-link-btn {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  padding: 0.2rem 0.5rem;
+  background: rgba(82, 196, 26, 0.08);
+  border: 1px solid rgba(82, 196, 26, 0.3);
+  border-radius: 3px;
+  color: #52c41a;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.tls-link-btn:hover {
+  background: rgba(82, 196, 26, 0.15);
+  box-shadow: 0 0 8px rgba(82, 196, 26, 0.2);
+}
+
 @media (max-width: 900px) {
   .scenario-content {
     grid-template-columns: 1fr;

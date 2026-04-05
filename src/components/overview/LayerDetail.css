@@ -170,3 +170,52 @@
 .field-desc {
   color: var(--text-secondary);
 }
+
+/* Security threats section */
+.security-section h3 {
+  color: #ff7a45;
+}
+
+.security-threats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.threat-row {
+  display: grid;
+  grid-template-columns: 18px auto 1fr;
+  gap: 0.4rem;
+  align-items: start;
+  font-size: 0.75rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.threat-row:last-child {
+  border-bottom: none;
+}
+
+.threat-sev {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.threat-name {
+  color: var(--text-primary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.threat-mit {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}

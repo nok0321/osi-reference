@@ -1,6 +1,7 @@
 import { Show, createMemo } from "solid-js";
 import { useI18n } from "../../i18n/context";
-import { activeScenario, setActiveScenario, scenarioStep, setScenarioStep } from "../../state/app-state";
+import { activeScenario, setActiveScenario, scenarioStep, setScenarioStep, setActiveView } from "../../state/app-state";
+import { setAuthSubView } from "../../state/security-state";
 import { getScenario } from "../../data/scenarios";
 import type { ScenarioType } from "../../types";
 import StepControl from "../shared/StepControl";
@@ -21,6 +22,15 @@ export default function ScenarioView() {
     setActiveScenario(id);
     setScenarioStep(0);
   }
+
+  function goToTlsDeepDive() {
+    setActiveView("auth");
+    setAuthSubView("tls-deep");
+  }
+
+  const isTlsScenario = createMemo(() =>
+    activeScenario() === "tls" || activeScenario() === "tls-deep"
+  );
 
   return (
     <div class="scenario-view">
@@ -45,6 +55,11 @@ export default function ScenarioView() {
       <div class="scenario-desc">
         <span class="desc-label mono">{t(scenario().nameJa, scenario().name)}</span>
         <span class="desc-text">{t(scenario().descriptionJa, scenario().description)}</span>
+        <Show when={isTlsScenario()}>
+          <button class="tls-link-btn" onClick={goToTlsDeepDive}>
+            {t("TLS詳細解析へ →", "TLS Deep Dive →")}
+          </button>
+        </Show>
       </div>
 
       <div class="scenario-content">

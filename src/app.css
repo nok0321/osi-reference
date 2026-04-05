@@ -179,3 +179,72 @@ code, .mono {
 .view-container {
   margin-top: 1rem;
 }
+
+/* Error fallback */
+.error-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  gap: 1rem;
+  color: #ff4d4f;
+  font-family: var(--font-mono);
+}
+
+.error-fallback pre {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  max-width: 600px;
+  overflow-x: auto;
+}
+
+/* Responsive: Large (1200px+) */
+@media (min-width: 1200px) {
+  #root {
+    max-width: 1400px;
+  }
+}
+
+/* Responsive: Medium (900-1200px) */
+@media (max-width: 1200px) {
+  #root {
+    max-width: 100%;
+    padding: 0.75rem;
+  }
+}
+
+/* Responsive: Small (<900px) */
+@media (max-width: 900px) {
+  #root {
+    padding: 0.5rem;
+  }
+
+  .app-header {
+    padding: 0.5rem 0;
+  }
+
+  .app-title {
+    font-size: 1rem;
+  }
+}
+
+/* Responsive: Extra small (<600px) */
+@media (max-width: 600px) {
+  html {
+    font-size: 14px;
+  }
+
+  .app-title {
+    font-size: 0.9rem;
+  }
+}
+
+/* Dark scrollbar for all browsers */
+* {
+  scrollbar-color: var(--border-active) var(--bg-secondary);
+  scrollbar-width: thin;
+}
