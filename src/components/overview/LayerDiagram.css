@@ -1,0 +1,14 @@
+.layer-diagram {
+  flex: 1;
+  min-width: 300px;
+  max-width: 460px;
+}
+
+.diagram-svg {
+  width: 100%;
+  height: auto;
+}
+
+.layer-group:hover .layer-bg {
+  filter: url(#glow);
+}

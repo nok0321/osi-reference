@@ -1,0 +1,28 @@
+.protocol-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0.15rem 0.5rem;
+  background: color-mix(in srgb, var(--badge-color) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--badge-color) 40%, transparent);
+  border-radius: 100px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--badge-color);
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+
+.protocol-badge:hover {
+  background: color-mix(in srgb, var(--badge-color) 25%, transparent);
+}
+
+.protocol-badge.has-note {
+  cursor: help;
+}
+
+.badge-note {
+  font-size: 0.6rem;
+  color: var(--trace-color);
+}

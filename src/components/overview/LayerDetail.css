@@ -1,0 +1,172 @@
+.layer-detail {
+  flex: 1;
+  min-width: 320px;
+  max-width: 540px;
+}
+
+.detail-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  gap: 0.75rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.detail-empty-icon {
+  font-size: 2.5rem;
+  opacity: 0.3;
+}
+
+.detail-content {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-top: 3px solid var(--detail-color);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  animation: slideIn 0.3s var(--transition-slow);
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.detail-layer-num {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--detail-color);
+}
+
+.detail-titles {
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.detail-name-ja {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.detail-section {
+  margin-bottom: 1rem;
+}
+
+.detail-section h3 {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.4rem;
+}
+
+.detail-section p {
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.protocol-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.protocol-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.proto-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.proto-name {
+  min-width: 80px;
+  color: var(--detail-color);
+  font-weight: 500;
+}
+
+.proto-desc {
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.proto-port {
+  color: var(--trace-color);
+  font-size: 0.7rem;
+}
+
+.device-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.device-badge {
+  padding: 0.15rem 0.5rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.header-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.field-name {
+  min-width: 110px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.field-bits {
+  min-width: 45px;
+  color: var(--trace-color);
+  font-size: 0.7rem;
+}
+
+.field-desc {
+  color: var(--text-secondary);
+}

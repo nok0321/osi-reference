@@ -1,0 +1,17 @@
+.overview-view {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+@media (max-width: 900px) {
+  .overview-view {
+    flex-direction: column;
+  }
+
+  .overview-view .layer-diagram,
+  .overview-view .layer-detail {
+    max-width: 100%;
+    min-width: 0;
+  }
+}
