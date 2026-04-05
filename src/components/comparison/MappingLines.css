@@ -1,0 +1,13 @@
+/* MappingLines */
+.mapping-lines-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: visible;
+}
+
+.mapping-path {
+  transition: opacity 200ms ease, stroke-width 200ms ease;
+}

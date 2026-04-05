@@ -1,0 +1,79 @@
+/* EncapsulationView */
+.encapsulation-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.encap-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.view-title {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  color: var(--glow-color);
+  letter-spacing: 0.03em;
+}
+
+.encap-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.direction-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.8rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.direction-toggle:hover {
+  border-color: var(--glow-color);
+  color: var(--glow-color);
+}
+
+.direction-toggle.active {
+  border-color: var(--trace-color);
+  color: var(--trace-color);
+}
+
+.direction-icon {
+  font-size: 0.7rem;
+}
+
+.encap-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  min-height: 400px;
+}
+
+.encap-left {
+  display: flex;
+  flex-direction: column;
+}
+
+.encap-right {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+@media (max-width: 900px) {
+  .encap-content {
+    grid-template-columns: 1fr;
+  }
+}

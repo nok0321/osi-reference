@@ -1,0 +1,96 @@
+/* DualModel */
+.model-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.column-header {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 0.5rem 0.8rem;
+  text-align: center;
+}
+
+.layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.model-layer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.8rem;
+  background: var(--m-color-dim);
+  border-left: 3px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  flex: 1;
+}
+
+.model-layer:hover,
+.model-layer.highlighted {
+  border-left-color: var(--m-color);
+  background: linear-gradient(90deg, var(--m-color-dim), transparent 70%);
+  box-shadow: 0 0 12px var(--m-color-dim);
+}
+
+.osi-column {
+  margin-right: 0;
+}
+
+.tcpip-column {
+  margin-left: 0;
+}
+
+.osi-layer .m-num {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--m-color);
+  min-width: 24px;
+}
+
+.m-name {
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.m-span {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+}
+
+.tcpip-layer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  text-align: center;
+  border-left: none;
+  border-right: 3px solid transparent;
+}
+
+.tcpip-layer:hover,
+.tcpip-layer.highlighted {
+  border-left: none;
+  border-right-color: var(--m-color);
+}
+
+@media (max-width: 900px) {
+  .model-layer {
+    padding: 0.4rem 0.6rem;
+  }
+
+  .m-name {
+    font-size: 0.75rem;
+  }
+}

@@ -4,6 +4,8 @@ import { useI18n } from "./i18n/context";
 import type { ViewType } from "./types";
 import TabBar from "./components/shared/TabBar";
 import OverviewView from "./components/overview/OverviewView";
+import EncapsulationView from "./components/encapsulation/EncapsulationView";
+import ComparisonView from "./components/comparison/ComparisonView";
 import "./app.css";
 
 function PlaceholderView(props: { name: string; icon: string }) {
@@ -41,13 +43,13 @@ export default function App() {
             <OverviewView />
           </Match>
           <Match when={activeView() === "encapsulation"}>
-            <PlaceholderView name={t("カプセル化", "Encapsulation")} icon="◈" />
+            <EncapsulationView />
           </Match>
           <Match when={activeView() === "scenario"}>
             <PlaceholderView name={t("シナリオ", "Scenario")} icon="◆" />
           </Match>
           <Match when={activeView() === "comparison"}>
-            <PlaceholderView name={t("TCP/IP比較", "TCP/IP Comparison")} icon="⊞" />
+            <ComparisonView />
           </Match>
           <Match when={activeView() === "auth"}>
             <PlaceholderView name={t("認証・認可", "Auth")} icon="⛨" />
