@@ -1,0 +1,85 @@
+/* AuthView */
+.auth-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.auth-view .view-title {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  color: var(--glow-color);
+  letter-spacing: 0.03em;
+}
+
+/* Sub-tabs */
+.auth-subtabs {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  padding: 0.3rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.subtab {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.65rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.subtab:hover {
+  color: var(--glow-color);
+  background: var(--bg-secondary);
+}
+
+.subtab.active {
+  color: var(--trace-color);
+  background: rgba(196, 155, 94, 0.1);
+  border-color: var(--trace-color-dim);
+}
+
+.subtab-icon {
+  font-size: 0.8rem;
+}
+
+.subtab-label {
+  font-size: 0.7rem;
+}
+
+.auth-content {
+  min-height: 400px;
+}
+
+/* Placeholder */
+.auth-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  gap: 0.5rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+
+.ph-icon {
+  font-size: 2rem;
+  opacity: 0.3;
+}
+
+.ph-note {
+  font-size: 0.65rem;
+  opacity: 0.5;
+}

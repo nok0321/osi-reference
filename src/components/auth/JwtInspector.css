@@ -1,0 +1,249 @@
+/* JwtInspector */
+.jwt-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.jwt-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.jwt-title {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.jwt-invalid-badge {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #ff4d4f;
+  background: rgba(255, 77, 79, 0.12);
+  border: 1px solid rgba(255, 77, 79, 0.4);
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+  animation: invalidPulse 1s ease infinite;
+}
+
+@keyframes invalidPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Encoded token */
+.jwt-encoded {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+}
+
+.encoded-label {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.5rem;
+}
+
+.encoded-segments {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  line-height: 1.8;
+  word-break: break-all;
+  cursor: pointer;
+}
+
+.encoded-segment {
+  transition: opacity var(--transition-fast);
+}
+
+.encoded-segment:hover {
+  text-decoration: underline;
+}
+
+.encoded-segment.active {
+  font-weight: 700;
+  text-shadow: 0 0 8px currentColor;
+}
+
+.encoded-segment + .encoded-segment::before {
+  content: ".";
+  color: var(--text-muted);
+  margin: 0 1px;
+}
+
+/* Section buttons */
+.jwt-sections {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.section-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.6rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.section-btn:hover {
+  border-color: var(--sec-color);
+}
+
+.section-btn.active {
+  border-color: var(--sec-color);
+  background: var(--sec-color-dim);
+  color: var(--sec-color);
+}
+
+.sec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.sec-name {
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
+/* Decoded Panel */
+.jwt-decoded {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-top: 3px solid var(--dec-color);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  animation: decodedFade 300ms ease both;
+}
+
+@keyframes decodedFade {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.decoded-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.decoded-title {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--dec-color);
+}
+
+.decoded-subtitle {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+}
+
+.decoded-json {
+  font-size: 0.7rem;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.75rem;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.decoded-editor {
+  width: 100%;
+  font-size: 0.7rem;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--dec-color);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.75rem;
+  resize: vertical;
+  outline: none;
+  font-family: var(--font-mono);
+  line-height: 1.5;
+}
+
+.decoded-editor:focus {
+  box-shadow: 0 0 8px color-mix(in srgb, var(--dec-color) 30%, transparent);
+}
+
+/* Field rows */
+.decoded-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.jwt-field-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+}
+
+.jwt-field-key {
+  font-weight: 600;
+  min-width: 70px;
+}
+
+.jwt-field-value {
+  color: var(--text-primary);
+  min-width: 100px;
+}
+
+.jwt-field-desc {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  flex: 1;
+}
+
+/* JWT structure */
+.jwt-structure {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+}
+
+.struct-label {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.4rem;
+}
+
+.struct-formula {
+  font-size: 0.85rem;
+  margin-bottom: 0.4rem;
+}
+
+.struct-dot {
+  color: var(--text-muted);
+  margin: 0 2px;
+}
+
+.struct-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}

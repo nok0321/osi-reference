@@ -7,6 +7,7 @@ import OverviewView from "./components/overview/OverviewView";
 import EncapsulationView from "./components/encapsulation/EncapsulationView";
 import ScenarioView from "./components/scenario/ScenarioView";
 import ComparisonView from "./components/comparison/ComparisonView";
+import AuthView from "./components/auth/AuthView";
 import "./app.css";
 
 function PlaceholderView(props: { name: string; icon: string }) {
@@ -53,7 +54,7 @@ export default function App() {
             <ComparisonView />
           </Match>
           <Match when={activeView() === "auth"}>
-            <PlaceholderView name={t("認証・認可", "Auth")} icon="⛨" />
+            <AuthView />
           </Match>
           <Match when={activeView() === "security"}>
             <PlaceholderView name={t("セキュリティ", "Security")} icon="⊙" />
