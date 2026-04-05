@@ -1,4 +1,27 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Environment / local config
 *.local
+.env
+.env.*
+
+# Claude Code
+.claude/
+
+# Logs
+npm-debug.log*
