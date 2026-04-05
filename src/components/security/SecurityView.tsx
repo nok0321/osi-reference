@@ -1,17 +1,9 @@
 import { useI18n } from "../../i18n/context";
 import PacketMonitor from "./PacketMonitor";
 import CertChain from "./CertChain";
+import FirewallRules from "./FirewallRules";
+import AttackMap from "./AttackMap";
 import "./SecurityView.css";
-
-function PlaceholderPanel(props: { name: string }) {
-  return (
-    <div class="security-placeholder">
-      <span class="sp-icon">◇</span>
-      <span>{props.name}</span>
-      <span class="sp-note">Coming in Phase 7...</span>
-    </div>
-  );
-}
 
 export default function SecurityView() {
   const { t } = useI18n();
@@ -29,10 +21,10 @@ export default function SecurityView() {
           <CertChain />
         </div>
         <div class="grid-panel panel-bl">
-          <PlaceholderPanel name={t("ファイアウォールルール", "Firewall Rules")} />
+          <FirewallRules />
         </div>
         <div class="grid-panel panel-br">
-          <PlaceholderPanel name={t("攻撃マップ", "Attack Map")} />
+          <AttackMap />
         </div>
       </div>
     </div>

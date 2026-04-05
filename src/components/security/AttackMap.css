@@ -1,0 +1,222 @@
+/* AttackMap */
+.attack-map {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  height: 100%;
+}
+
+.am-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.am-title {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.am-count {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+}
+
+/* Layer selector */
+.am-layers {
+  display: flex;
+  gap: 0.2rem;
+  flex-wrap: wrap;
+}
+
+.am-layer-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem 0.4rem;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.am-layer-btn:hover {
+  border-color: var(--lb-color, var(--glow-color));
+  color: var(--lb-color, var(--glow-color));
+}
+
+.am-layer-btn.active {
+  border-color: var(--lb-color, var(--trace-color));
+  color: var(--lb-color, var(--trace-color));
+  background: color-mix(in srgb, var(--lb-color, var(--trace-color)) 10%, transparent);
+}
+
+.layer-attack-count {
+  font-size: 0.45rem;
+  background: var(--bg-secondary);
+  padding: 0 0.2rem;
+  border-radius: 2px;
+}
+
+/* Simulation alert */
+.sim-alert {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.5rem;
+  background: color-mix(in srgb, var(--sim-color) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--sim-color) 40%, transparent);
+  border-radius: var(--radius-sm);
+  animation: simPulse 0.5s ease infinite alternate;
+}
+
+@keyframes simPulse {
+  from { opacity: 0.7; }
+  to { opacity: 1; }
+}
+
+.sim-icon {
+  font-size: 0.8rem;
+  color: var(--sim-color);
+}
+
+.sim-text {
+  font-size: 0.7rem;
+  color: var(--text-primary);
+}
+
+.sim-layer {
+  margin-left: auto;
+  font-size: 0.6rem;
+  color: var(--text-muted);
+}
+
+/* Attack list */
+.am-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 200px;
+}
+
+.attack-card {
+  padding: 0.3rem 0.4rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.attack-card:hover {
+  background: var(--bg-secondary);
+}
+
+.attack-card.expanded {
+  background: var(--bg-secondary);
+}
+
+.attack-top {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.attack-sev {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.attack-layer {
+  font-size: 0.55rem;
+  font-weight: 700;
+  min-width: 20px;
+}
+
+.attack-name {
+  font-size: 0.7rem;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.attack-cat {
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Attack detail */
+.attack-detail {
+  margin-top: 0.4rem;
+  padding: 0.4rem;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: var(--radius-sm);
+  animation: adFade 200ms ease both;
+}
+
+@keyframes adFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.ad-desc {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 0.4rem;
+}
+
+.ad-mitigation {
+  padding: 0.3rem 0.4rem;
+  background: rgba(82, 196, 26, 0.06);
+  border: 1px solid rgba(82, 196, 26, 0.15);
+  border-radius: 3px;
+  margin-bottom: 0.4rem;
+}
+
+.ad-label {
+  font-size: 0.5rem;
+  color: #52c41a;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  display: block;
+  margin-bottom: 0.15rem;
+}
+
+.ad-text {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.ad-sim-btn {
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  padding: 0.2rem 0.5rem;
+  background: rgba(255, 77, 79, 0.08);
+  border: 1px solid rgba(255, 77, 79, 0.3);
+  border-radius: 3px;
+  color: #ff4d4f;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.ad-sim-btn:hover {
+  background: rgba(255, 77, 79, 0.15);
+  box-shadow: 0 0 8px rgba(255, 77, 79, 0.2);
+}

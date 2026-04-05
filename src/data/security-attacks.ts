@@ -1,0 +1,153 @@
+import type { OsiAttack } from "../types/security";
+
+export const OSI_ATTACKS: OsiAttack[] = [
+  // Layer 1
+  {
+    name: "Cable Tapping", nameJa: "ケーブルタッピング",
+    layer: 1, category: "Eavesdropping", categoryJa: "盗聴",
+    description: "Physical interception of network cables to capture raw signals",
+    descriptionJa: "ネットワークケーブルを物理的に傍受し、生の信号をキャプチャ",
+    mitigation: "Use fiber optic cables (harder to tap), physical security, conduit protection",
+    mitigationJa: "光ファイバケーブル使用（傍受困難）、物理的セキュリティ、配管保護",
+    severity: "medium",
+  },
+  {
+    name: "Jamming", nameJa: "ジャミング",
+    layer: 1, category: "Denial of Service", categoryJa: "サービス拒否",
+    description: "Radio frequency interference to disrupt wireless communications",
+    descriptionJa: "無線通信を妨害する電波干渉",
+    mitigation: "Frequency hopping, directional antennas, wired fallback",
+    mitigationJa: "周波数ホッピング、指向性アンテナ、有線フォールバック",
+    severity: "medium",
+  },
+  // Layer 2
+  {
+    name: "ARP Spoofing", nameJa: "ARPスプーフィング",
+    layer: 2, category: "Man-in-the-Middle", categoryJa: "中間者攻撃",
+    description: "Forging ARP replies to associate attacker's MAC with victim's IP, intercepting traffic",
+    descriptionJa: "偽のARP応答を送信し、攻撃者のMACを被害者のIPに関連付けてトラフィックを傍受",
+    mitigation: "Dynamic ARP Inspection (DAI), static ARP entries, 802.1X authentication",
+    mitigationJa: "動的ARP検査(DAI)、静的ARPエントリ、802.1X認証",
+    severity: "high",
+  },
+  {
+    name: "MAC Flooding", nameJa: "MACフラッディング",
+    layer: 2, category: "Denial of Service", categoryJa: "サービス拒否",
+    description: "Overwhelming switch MAC table causing it to act as a hub, broadcasting all traffic",
+    descriptionJa: "スイッチのMACテーブルを溢れさせ、ハブのように動作させてすべてのトラフィックをブロードキャスト",
+    mitigation: "Port security, MAC address limits, 802.1X",
+    mitigationJa: "ポートセキュリティ、MACアドレス制限、802.1X",
+    severity: "high",
+  },
+  // Layer 3
+  {
+    name: "IP Spoofing", nameJa: "IPスプーフィング",
+    layer: 3, category: "Spoofing", categoryJa: "なりすまし",
+    description: "Forging source IP address to impersonate another host or bypass IP-based access controls",
+    descriptionJa: "送信元IPアドレスを偽装し、他のホストになりすますかIPベースのアクセス制御を回避",
+    mitigation: "Ingress/egress filtering (BCP38), reverse path forwarding, IPsec",
+    mitigationJa: "入力/出力フィルタリング(BCP38)、リバースパスフォワーディング、IPsec",
+    severity: "high",
+  },
+  {
+    name: "ICMP Flood (Ping of Death)", nameJa: "ICMPフラッド",
+    layer: 3, category: "Denial of Service", categoryJa: "サービス拒否",
+    description: "Flooding target with ICMP Echo Request packets to consume bandwidth and resources",
+    descriptionJa: "ICMPエコー要求パケットでターゲットを溢れさせ、帯域幅とリソースを消費",
+    mitigation: "Rate-limit ICMP, firewall rules, traffic shaping",
+    mitigationJa: "ICMPレート制限、ファイアウォールルール、トラフィックシェーピング",
+    severity: "medium",
+  },
+  // Layer 4
+  {
+    name: "SYN Flood", nameJa: "SYNフラッド",
+    layer: 4, category: "Denial of Service", categoryJa: "サービス拒否",
+    description: "Sending massive SYN requests without completing handshake, exhausting server connection table",
+    descriptionJa: "大量のSYNリクエストをハンドシェイク完了なしに送信し、サーバーの接続テーブルを枯渇",
+    mitigation: "SYN cookies, connection timeouts, rate limiting, DDoS protection services",
+    mitigationJa: "SYN Cookie、接続タイムアウト、レート制限、DDoS保護サービス",
+    severity: "critical",
+  },
+  {
+    name: "Port Scanning", nameJa: "ポートスキャン",
+    layer: 4, category: "Reconnaissance", categoryJa: "偵察",
+    description: "Probing target ports to discover running services and potential vulnerabilities",
+    descriptionJa: "ターゲットのポートを探索し、実行中のサービスと潜在的な脆弱性を発見",
+    mitigation: "Firewall rules, IDS/IPS, port knocking, minimize open ports",
+    mitigationJa: "ファイアウォールルール、IDS/IPS、ポートノッキング、オープンポートの最小化",
+    severity: "low",
+  },
+  // Layer 5
+  {
+    name: "Session Hijacking", nameJa: "セッションハイジャック",
+    layer: 5, category: "Session Attack", categoryJa: "セッション攻撃",
+    description: "Stealing or predicting session tokens to take over an authenticated session",
+    descriptionJa: "セッショントークンを盗むか予測して、認証済みセッションを乗っ取り",
+    mitigation: "Secure session tokens, HTTPS only, session regeneration, short expiry",
+    mitigationJa: "セキュアなセッショントークン、HTTPS限定、セッション再生成、短い有効期限",
+    severity: "critical",
+  },
+  // Layer 6
+  {
+    name: "SSL Stripping", nameJa: "SSLストリッピング",
+    layer: 6, category: "Downgrade Attack", categoryJa: "ダウングレード攻撃",
+    description: "MITM downgrades HTTPS to HTTP, intercepting plaintext traffic while victim believes connection is secure",
+    descriptionJa: "MITMがHTTPSをHTTPにダウングレードし、被害者が安全と信じている間に平文トラフィックを傍受",
+    mitigation: "HSTS, HSTS preload list, certificate pinning",
+    mitigationJa: "HSTS、HSTSプリロードリスト、証明書ピンニング",
+    severity: "critical",
+  },
+  {
+    name: "Padding Oracle", nameJa: "パディングオラクル",
+    layer: 6, category: "Cryptographic Attack", categoryJa: "暗号攻撃",
+    description: "Exploiting error messages from padding validation to decrypt ciphertext byte by byte",
+    descriptionJa: "パディング検証のエラーメッセージを悪用し、暗号文をバイト単位で復号",
+    mitigation: "Use authenticated encryption (AES-GCM), constant-time comparison, TLS 1.3",
+    mitigationJa: "認証付き暗号(AES-GCM)使用、定数時間比較、TLS 1.3",
+    severity: "high",
+  },
+  // Layer 7
+  {
+    name: "SQL Injection", nameJa: "SQLインジェクション",
+    layer: 7, category: "Injection", categoryJa: "インジェクション",
+    description: "Inserting malicious SQL statements through user input to manipulate database queries",
+    descriptionJa: "ユーザー入力を通じて悪意のあるSQL文を挿入し、データベースクエリを操作",
+    mitigation: "Parameterized queries, ORM, input validation, WAF",
+    mitigationJa: "パラメータ化クエリ、ORM、入力バリデーション、WAF",
+    severity: "critical",
+  },
+  {
+    name: "XSS (Cross-Site Scripting)", nameJa: "クロスサイトスクリプティング",
+    layer: 7, category: "Injection", categoryJa: "インジェクション",
+    description: "Injecting malicious scripts into web pages viewed by other users",
+    descriptionJa: "他のユーザーが閲覧するWebページに悪意のあるスクリプトを挿入",
+    mitigation: "Output encoding, CSP, input sanitization, HttpOnly cookies",
+    mitigationJa: "出力エンコーディング、CSP、入力サニタイゼーション、HttpOnlyクッキー",
+    severity: "high",
+  },
+  {
+    name: "CSRF (Cross-Site Request Forgery)", nameJa: "クロスサイトリクエストフォージェリ",
+    layer: 7, category: "Request Forgery", categoryJa: "リクエスト偽造",
+    description: "Tricking authenticated user's browser into sending unintended requests to a web application",
+    descriptionJa: "認証済みユーザーのブラウザを騙して、Webアプリケーションに意図しないリクエストを送信",
+    mitigation: "CSRF tokens, SameSite cookies, origin checking",
+    mitigationJa: "CSRFトークン、SameSiteクッキー、オリジンチェック",
+    severity: "high",
+  },
+  {
+    name: "DNS Spoofing", nameJa: "DNSスプーフィング",
+    layer: 7, category: "Spoofing", categoryJa: "なりすまし",
+    description: "Corrupting DNS cache to redirect users to malicious websites",
+    descriptionJa: "DNSキャッシュを汚染してユーザーを悪意のあるWebサイトにリダイレクト",
+    mitigation: "DNSSEC, DNS over HTTPS (DoH), DNS over TLS (DoT)",
+    mitigationJa: "DNSSEC、DNS over HTTPS (DoH)、DNS over TLS (DoT)",
+    severity: "high",
+  },
+];
+
+export const SEVERITY_COLORS: Record<string, string> = {
+  low: "#52c41a",
+  medium: "#faad14",
+  high: "#ff7a45",
+  critical: "#ff4d4f",
+};
