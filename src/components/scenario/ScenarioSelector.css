@@ -1,0 +1,41 @@
+/* ScenarioSelector */
+.scenario-selector {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.scenario-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.7rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.scenario-btn:hover {
+  border-color: var(--glow-color);
+  color: var(--glow-color);
+}
+
+.scenario-btn.active {
+  border-color: var(--trace-color);
+  color: var(--trace-color);
+  background: rgba(196, 155, 94, 0.1);
+  box-shadow: 0 0 8px rgba(196, 155, 94, 0.15);
+}
+
+.scenario-icon {
+  font-size: 0.85rem;
+}
+
+.scenario-label {
+  font-size: 0.75rem;
+}

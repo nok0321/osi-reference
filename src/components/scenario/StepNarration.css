@@ -1,0 +1,67 @@
+/* StepNarration */
+.step-narration {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-top: 3px solid var(--narr-color);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  animation: narrationFade 300ms ease both;
+}
+
+@keyframes narrationFade {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.narr-header {
+  margin-bottom: 0.6rem;
+}
+
+.narr-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.narr-step {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+}
+
+.narr-layer {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.narr-side {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.narr-title {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.narr-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 0.6rem;
+}
+
+.narr-protocol {
+  font-size: 0.7rem;
+  color: var(--trace-color);
+  background: rgba(196, 155, 94, 0.08);
+  border: 1px solid var(--trace-color-dim);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.6rem;
+  display: inline-block;
+}

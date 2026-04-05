@@ -5,6 +5,7 @@ import type { ViewType } from "./types";
 import TabBar from "./components/shared/TabBar";
 import OverviewView from "./components/overview/OverviewView";
 import EncapsulationView from "./components/encapsulation/EncapsulationView";
+import ScenarioView from "./components/scenario/ScenarioView";
 import ComparisonView from "./components/comparison/ComparisonView";
 import "./app.css";
 
@@ -46,7 +47,7 @@ export default function App() {
             <EncapsulationView />
           </Match>
           <Match when={activeView() === "scenario"}>
-            <PlaceholderView name={t("シナリオ", "Scenario")} icon="◆" />
+            <ScenarioView />
           </Match>
           <Match when={activeView() === "comparison"}>
             <ComparisonView />
