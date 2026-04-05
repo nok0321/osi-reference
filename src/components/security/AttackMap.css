@@ -183,15 +183,15 @@
 
 .ad-mitigation {
   padding: 0.3rem 0.4rem;
-  background: rgba(82, 196, 26, 0.06);
-  border: 1px solid rgba(82, 196, 26, 0.15);
+  background: var(--color-success-subtle);
+  border: 1px solid var(--color-success-dim);
   border-radius: 3px;
   margin-bottom: 0.4rem;
 }
 
 .ad-label {
   font-size: 0.5rem;
-  color: #52c41a;
+  color: var(--color-success);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   display: block;
@@ -208,15 +208,15 @@
   font-family: var(--font-mono);
   font-size: 0.55rem;
   padding: 0.2rem 0.5rem;
-  background: rgba(255, 77, 79, 0.08);
-  border: 1px solid rgba(255, 77, 79, 0.3);
+  background: var(--color-danger-faint);
+  border: 1px solid var(--color-danger-border);
   border-radius: 3px;
-  color: #ff4d4f;
+  color: var(--color-danger);
   cursor: pointer;
   transition: all var(--transition-fast);
 }
 
 .ad-sim-btn:hover {
-  background: rgba(255, 77, 79, 0.15);
-  box-shadow: 0 0 8px rgba(255, 77, 79, 0.2);
+  background: var(--color-danger-dim);
+  box-shadow: 0 0 8px var(--color-danger-glow);
 }

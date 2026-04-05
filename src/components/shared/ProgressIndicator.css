@@ -1,0 +1,25 @@
+.progress-indicator {
+  font-size: 0.6rem;
+  font-family: var(--font-mono);
+  min-width: 1.2rem;
+  height: 1.2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  margin-left: 0.25rem;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.progress-indicator.visited {
+  opacity: 0.7;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+}
+
+.progress-indicator.complete {
+  opacity: 1;
+  background: var(--color-success-dim);
+  color: var(--color-success);
+}

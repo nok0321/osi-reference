@@ -95,7 +95,9 @@ export default function AttackMap() {
               <div
                 class="attack-card"
                 classList={{ expanded: isExpanded() }}
+                tabindex="0"
                 onClick={() => setExpandedAttack(prev => prev === attack.name ? null : attack.name)}
+                onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpandedAttack(prev => prev === attack.name ? null : attack.name); } }}
               >
                 <div class="attack-top">
                   <span class="attack-sev" style={{ background: sevColor() }}>{attack.severity[0].toUpperCase()}</span>

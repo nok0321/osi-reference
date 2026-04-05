@@ -1,6 +1,8 @@
 import type { LayerNumber } from "./index";
 
-export type AuthSubView = "oauth" | "jwt" | "tls-deep" | "session-vs-token" | "rbac";
+export type AuthSubView =
+  | "oauth" | "jwt" | "tls-deep" | "session-vs-token" | "rbac"
+  | "auth-methods" | "oidc-saml" | "fido2" | "kerberos" | "sso-idp-apikey";
 
 export interface OAuthStep {
   stepNumber: number;
@@ -112,4 +114,103 @@ export interface OsiAttack {
   mitigation: string;
   mitigationJa: string;
   severity: "low" | "medium" | "high" | "critical";
+}
+
+export interface AuthMethodInfo {
+  id: string;
+  name: string;
+  nameJa: string;
+  category: "knowledge" | "possession" | "inherence" | "multi";
+  categoryLabel: string;
+  categoryLabelJa: string;
+  description: string;
+  descriptionJa: string;
+  strengths: string[];
+  strengthsJa: string[];
+  weaknesses: string[];
+  weaknessesJa: string[];
+  osiLayers: LayerNumber[];
+  icon: string;
+}
+
+export interface ProtocolFlowStep {
+  stepNumber: number;
+  from: string;
+  to: string;
+  action: string;
+  actionJa: string;
+  description: string;
+  descriptionJa: string;
+  dataPayload?: string;
+  osiLayer: LayerNumber;
+}
+
+export interface ProtocolActor {
+  id: string;
+  name: string;
+  nameJa: string;
+  color: string;
+}
+
+export interface KerberosStep {
+  stepNumber: number;
+  from: "client" | "kdc-as" | "kdc-tgs" | "service";
+  to: "client" | "kdc-as" | "kdc-tgs" | "service";
+  action: string;
+  actionJa: string;
+  description: string;
+  descriptionJa: string;
+  ticket?: string;
+  osiLayer: LayerNumber;
+}
+
+export interface AclEntry {
+  subject: string;
+  resource: string;
+  permissions: ("read" | "write" | "execute" | "delete")[];
+  effect: "allow" | "deny";
+}
+
+export interface PolicyRule {
+  id: string;
+  name: string;
+  nameJa: string;
+  effect: "allow" | "deny";
+  principal: string;
+  action: string;
+  resource: string;
+  condition: string;
+  conditionJa: string;
+}
+
+export interface SsoPattern {
+  id: string;
+  name: string;
+  nameJa: string;
+  description: string;
+  descriptionJa: string;
+  flow: string[];
+  flowJa: string[];
+}
+
+export interface IdpInfo {
+  id: string;
+  name: string;
+  nameJa: string;
+  protocol: string;
+  description: string;
+  descriptionJa: string;
+  examples: string[];
+  color: string;
+}
+
+export interface ApiKeyPattern {
+  id: string;
+  name: string;
+  nameJa: string;
+  method: string;
+  description: string;
+  descriptionJa: string;
+  example: string;
+  security: "low" | "medium" | "high";
 }

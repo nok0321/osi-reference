@@ -3,6 +3,7 @@ import { useI18n } from "../../i18n/context";
 import { firewallFilterLayer, setFirewallFilterLayer } from "../../state/security-state";
 import { DEFAULT_FW_RULES, generatePacket } from "../../data/certificate-data";
 import { getLayerColor } from "../../utils/colors";
+import { evaluatePacket } from "../../utils/firewall-eval";
 import type { FirewallRule, SecurityPacket } from "../../types/security";
 import type { LayerNumber } from "../../types";
 import "./FirewallRules.css";
@@ -22,14 +23,7 @@ export default function FirewallRules() {
     const pkt = generatePacket();
     setTestPacket(pkt);
 
-    // Find matching rule
-    const match = DEFAULT_FW_RULES.find(rule => {
-      if (rule.protocol !== pkt.protocol && rule.protocol !== "TCP" && rule.protocol !== "UDP") return false;
-      if (rule.port !== undefined && rule.port !== pkt.port) return false;
-      return true;
-    });
-
-    setTestResult(match ? match.action : "deny");
+    setTestResult(evaluatePacket(pkt, DEFAULT_FW_RULES));
 
     // Clear after animation
     setTimeout(() => { setTestPacket(null); setTestResult(null); }, 3000);

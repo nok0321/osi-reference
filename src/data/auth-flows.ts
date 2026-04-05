@@ -1,4 +1,4 @@
-import type { OAuthStep, JwtSection, JwtField, TlsStep, AuthMethodComparison, RbacRole, AbacPolicy } from "../types/security";
+import type { OAuthStep, JwtSection, JwtField, TlsStep, AuthMethodComparison, RbacRole, AbacPolicy, AclEntry, PolicyRule } from "../types/security";
 
 export const OAUTH_STEPS: OAuthStep[] = [
   {
@@ -336,5 +336,82 @@ export const ABAC_POLICIES: AbacPolicy[] = [
     condition: "resource.classification != 'confidential' OR subject.clearance >= 'secret'",
     conditionJa: "resource.classification != 'confidential' OR subject.clearance >= 'secret'",
     result: "deny",
+  },
+];
+
+/* ──── ACL (Access Control List) ──── */
+
+export const ACL_ENTRIES: AclEntry[] = [
+  { subject: "alice", resource: "/home/alice", permissions: ["read", "write", "execute"], effect: "allow" },
+  { subject: "alice", resource: "/shared/docs", permissions: ["read", "write"], effect: "allow" },
+  { subject: "alice", resource: "/admin/config", permissions: ["read"], effect: "deny" },
+  { subject: "bob", resource: "/home/bob", permissions: ["read", "write", "execute"], effect: "allow" },
+  { subject: "bob", resource: "/shared/docs", permissions: ["read"], effect: "allow" },
+  { subject: "bob", resource: "/shared/docs", permissions: ["write"], effect: "deny" },
+  { subject: "charlie", resource: "/home/charlie", permissions: ["read", "write", "execute"], effect: "allow" },
+  { subject: "charlie", resource: "/shared/docs", permissions: ["read", "write", "delete"], effect: "allow" },
+  { subject: "charlie", resource: "/admin/config", permissions: ["read", "write"], effect: "allow" },
+];
+
+export const ACL_RESOURCES = ["/home/{user}", "/shared/docs", "/admin/config"];
+export const ACL_SUBJECTS = ["alice", "bob", "charlie"];
+
+/* ──── Policy-Based Authorization ──── */
+
+export const POLICY_RULES: PolicyRule[] = [
+  {
+    id: "p1",
+    name: "Allow admins full access",
+    nameJa: "管理者にフルアクセスを許可",
+    effect: "allow",
+    principal: 'principal.role == "admin"',
+    action: "*",
+    resource: "*",
+    condition: "true",
+    conditionJa: "常に",
+  },
+  {
+    id: "p2",
+    name: "Allow editors to update own dept docs",
+    nameJa: "エディタに自部門ドキュメント更新を許可",
+    effect: "allow",
+    principal: 'principal.role == "editor"',
+    action: "update",
+    resource: "Document",
+    condition: "principal.dept == resource.dept",
+    conditionJa: "principal.dept == resource.dept",
+  },
+  {
+    id: "p3",
+    name: "Deny access outside business hours",
+    nameJa: "営業時間外のアクセスを拒否",
+    effect: "deny",
+    principal: "*",
+    action: "*",
+    resource: "FinancialReport",
+    condition: "context.time.hour < 9 || context.time.hour > 18",
+    conditionJa: "context.time.hour < 9 || context.time.hour > 18",
+  },
+  {
+    id: "p4",
+    name: "Allow read from internal network",
+    nameJa: "内部ネットワークからの読み取りを許可",
+    effect: "allow",
+    principal: 'principal.role == "viewer"',
+    action: "read",
+    resource: "InternalDoc",
+    condition: 'context.ip.startsWith("10.0.")',
+    conditionJa: 'context.ip.startsWith("10.0.")',
+  },
+  {
+    id: "p5",
+    name: "Deny delete on archived resources",
+    nameJa: "アーカイブリソースの削除を拒否",
+    effect: "deny",
+    principal: "*",
+    action: "delete",
+    resource: "Document",
+    condition: 'resource.status == "archived"',
+    conditionJa: 'resource.status == "archived"',
   },
 ];

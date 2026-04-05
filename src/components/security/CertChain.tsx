@@ -40,7 +40,9 @@ export default function CertChain() {
             expired: expired,
             selected: isSelected(),
           }}
+          tabindex="0"
           onClick={() => setSelectedCertNode(prev => prev === node.subject ? null : node.subject)}
+          onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedCertNode(prev => prev === node.subject ? null : node.subject); } }}
         >
           <div class="cert-node-header">
             <span class="cert-type-badge mono">{node.type.toUpperCase()}</span>

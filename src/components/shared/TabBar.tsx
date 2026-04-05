@@ -1,6 +1,7 @@
 import { For } from "solid-js";
 import type { ViewType } from "../../types";
 import { useI18n } from "../../i18n/context";
+import ProgressIndicator from "./ProgressIndicator";
 import "./TabBar.css";
 
 interface Tab {
@@ -37,7 +38,7 @@ export default function TabBar(props: TabBarProps) {
   const { t } = useI18n();
 
   return (
-    <nav class="tab-bar">
+    <nav class="tab-bar" role="tablist">
       <For each={TABS}>
         {(tab) => (
           <button
@@ -49,6 +50,7 @@ export default function TabBar(props: TabBarProps) {
           >
             <span class="tab-icon">{ICONS[tab.icon]}</span>
             <span class="tab-label">{t(tab.labelJa, tab.label)}</span>
+            <ProgressIndicator view={tab.id} />
           </button>
         )}
       </For>

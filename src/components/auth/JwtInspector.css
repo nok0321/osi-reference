@@ -20,9 +20,9 @@
   font-family: var(--font-mono);
   font-size: 0.6rem;
   font-weight: 700;
-  color: #ff4d4f;
-  background: rgba(255, 77, 79, 0.12);
-  border: 1px solid rgba(255, 77, 79, 0.4);
+  color: var(--color-danger);
+  background: var(--color-danger-muted);
+  border: 1px solid var(--color-danger-strong);
   padding: 0.2rem 0.5rem;
   border-radius: 3px;
   animation: invalidPulse 1s ease infinite;

@@ -1,12 +1,12 @@
 import { For, Show, createSignal } from "solid-js";
 import { useI18n } from "../../i18n/context";
-import { RBAC_ROLES, ALL_PERMISSIONS, ABAC_POLICIES } from "../../data/auth-flows";
-import type { RbacRole, AbacPolicy } from "../../types/security";
+import { RBAC_ROLES, ALL_PERMISSIONS, ABAC_POLICIES, ACL_ENTRIES, ACL_SUBJECTS, ACL_RESOURCES, POLICY_RULES } from "../../data/auth-flows";
+import type { RbacRole, AbacPolicy, AclEntry, PolicyRule } from "../../types/security";
 import "./PermissionModel.css";
 
 export default function PermissionModel() {
   const { t } = useI18n();
-  const [mode, setMode] = createSignal<"rbac" | "abac">("rbac");
+  const [mode, setMode] = createSignal<"rbac" | "abac" | "acl" | "policy">("rbac");
   const [selectedRole, setSelectedRole] = createSignal<string | null>(null);
 
   function hasPermission(role: RbacRole, perm: string): boolean {
@@ -29,6 +29,20 @@ export default function PermissionModel() {
           onClick={() => setMode("abac")}
         >
           ABAC
+        </button>
+        <button
+          class="perm-mode-btn"
+          classList={{ active: mode() === "acl" }}
+          onClick={() => setMode("acl")}
+        >
+          ACL
+        </button>
+        <button
+          class="perm-mode-btn"
+          classList={{ active: mode() === "policy" }}
+          onClick={() => setMode("policy")}
+        >
+          {t("ポリシー", "Policy")}
         </button>
       </div>
 
@@ -178,6 +192,163 @@ export default function PermissionModel() {
               <div class="mc-item">
                 <span class="mc-label">{t("複雑さ", "Complexity")}</span>
                 <span class="mc-val">{t("RBAC: 低い → ABAC: 高い", "RBAC: Low → ABAC: High")}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Show>
+
+      {/* ACL View */}
+      <Show when={mode() === "acl"}>
+        <div class="acl-view">
+          <div class="acl-desc">
+            <p>
+              {t(
+                "アクセス制御リスト (ACL): 各リソースに対して、どのサブジェクトがどの権限を持つかを明示的に定義。ファイルシステムやネットワーク機器で広く使用。",
+                "Access Control List (ACL): Explicitly defines which subjects have which permissions on each resource. Widely used in file systems and network devices."
+              )}
+            </p>
+          </div>
+
+          <div class="acl-matrix">
+            <div class="matrix-title mono">{t("ACL マトリクス", "ACL Matrix")}</div>
+            <div class="acl-table">
+              <div class="acl-table-header">
+                <span class="acl-corner" />
+                <For each={ACL_RESOURCES}>
+                  {(resource: string) => (
+                    <span class="acl-res-label mono">{resource}</span>
+                  )}
+                </For>
+              </div>
+              <For each={ACL_SUBJECTS}>
+                {(subject: string) => (
+                  <div class="acl-table-row">
+                    <span class="acl-subj-label mono">{subject}</span>
+                    <For each={ACL_RESOURCES}>
+                      {(resource: string) => {
+                        const entries = ACL_ENTRIES.filter((e: AclEntry) => e.subject === subject && e.resource === resource);
+                        return (
+                          <div class="acl-cell">
+                            <For each={entries}>
+                              {(entry: AclEntry) => (
+                                <div class="acl-perms">
+                                  <For each={entry.permissions}>
+                                    {(perm: string) => (
+                                      <span
+                                        class="acl-perm-chip mono"
+                                        classList={{
+                                          "perm-allow": entry.effect === "allow",
+                                          "perm-deny": entry.effect === "deny",
+                                        }}
+                                      >
+                                        {perm.charAt(0).toUpperCase()}
+                                      </span>
+                                    )}
+                                  </For>
+                                  <span
+                                    class="acl-effect mono"
+                                    classList={{
+                                      "effect-allow": entry.effect === "allow",
+                                      "effect-deny": entry.effect === "deny",
+                                    }}
+                                  >
+                                    {entry.effect}
+                                  </span>
+                                </div>
+                              )}
+                            </For>
+                            <Show when={entries.length === 0}>
+                              <span class="acl-empty">—</span>
+                            </Show>
+                          </div>
+                        );
+                      }}
+                    </For>
+                  </div>
+                )}
+              </For>
+            </div>
+          </div>
+
+          <div class="acl-legend">
+            <span class="acl-legend-item"><span class="acl-perm-chip perm-allow mono">R</span> = Read</span>
+            <span class="acl-legend-item"><span class="acl-perm-chip perm-allow mono">W</span> = Write</span>
+            <span class="acl-legend-item"><span class="acl-perm-chip perm-allow mono">E</span> = Execute</span>
+            <span class="acl-legend-item"><span class="acl-perm-chip perm-allow mono">D</span> = Delete</span>
+          </div>
+        </div>
+      </Show>
+
+      {/* Policy-Based View */}
+      <Show when={mode() === "policy"}>
+        <div class="policy-view">
+          <div class="policy-desc-text">
+            <p>
+              {t(
+                "ポリシーベース認可: Cedar/OPA スタイルの宣言的ルールでアクセス制御。プリンシパル、アクション、リソース、コンテキスト条件を組み合わせた柔軟なポリシー定義。",
+                "Policy-Based Authorization: Declarative rules (Cedar/OPA style) for access control. Flexible policy definitions combining principal, action, resource, and context conditions."
+              )}
+            </p>
+          </div>
+
+          <div class="policy-rules-list">
+            <For each={POLICY_RULES}>
+              {(rule: PolicyRule) => (
+                <div
+                  class="policy-rule-card"
+                  classList={{
+                    "policy-allow": rule.effect === "allow",
+                    "policy-deny": rule.effect === "deny",
+                  }}
+                >
+                  <div class="policy-rule-header">
+                    <span class="policy-result-badge mono">
+                      {rule.effect.toUpperCase()}
+                    </span>
+                    <span class="policy-rule-name">{t(rule.nameJa, rule.name)}</span>
+                  </div>
+                  <div class="policy-rule-body">
+                    <div class="policy-row">
+                      <span class="policy-label mono">{t("プリンシパル", "Principal")}</span>
+                      <code class="policy-code">{rule.principal}</code>
+                    </div>
+                    <div class="policy-row">
+                      <span class="policy-label mono">{t("アクション", "Action")}</span>
+                      <code class="policy-code">{rule.action}</code>
+                    </div>
+                    <div class="policy-row">
+                      <span class="policy-label mono">{t("リソース", "Resource")}</span>
+                      <code class="policy-code">{rule.resource}</code>
+                    </div>
+                    <div class="policy-condition">
+                      <span class="cond-label mono">{t("条件", "Condition")}</span>
+                      <code class="cond-code">{t(rule.conditionJa, rule.condition)}</code>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </For>
+          </div>
+
+          <div class="model-compare">
+            <div class="mc-title mono">{t("認可モデル比較", "Authorization Model Comparison")}</div>
+            <div class="mc-grid mc-grid-4">
+              <div class="mc-item">
+                <span class="mc-label">RBAC</span>
+                <span class="mc-val">{t("ロールベース", "Role-based")}</span>
+              </div>
+              <div class="mc-item">
+                <span class="mc-label">ABAC</span>
+                <span class="mc-val">{t("属性ベース", "Attribute-based")}</span>
+              </div>
+              <div class="mc-item">
+                <span class="mc-label">ACL</span>
+                <span class="mc-val">{t("リソース固有リスト", "Resource-specific list")}</span>
+              </div>
+              <div class="mc-item">
+                <span class="mc-label">{t("ポリシー", "Policy")}</span>
+                <span class="mc-val">{t("宣言的ルール", "Declarative rules")}</span>
               </div>
             </div>
           </div>

@@ -58,13 +58,10 @@ export default function PacketMonitor() {
   });
 
   const stats = createMemo(() => {
-    const all = packets();
-    return {
-      total: all.length,
-      safe: all.filter(p => p.status === "safe").length,
-      warning: all.filter(p => p.status === "warning").length,
-      threat: all.filter(p => p.status === "threat").length,
-    };
+    return packets().reduce(
+      (acc, p) => { acc[p.status]++; acc.total++; return acc; },
+      { total: 0, safe: 0, warning: 0, threat: 0 },
+    );
   });
 
   return (
@@ -76,10 +73,11 @@ export default function PacketMonitor() {
             class="pm-btn"
             classList={{ active: packetFlowRunning() }}
             onClick={() => packetFlowRunning() ? stopFlow() : startFlow()}
+            aria-label={packetFlowRunning() ? t("一時停止", "Pause") : t("再生", "Play")}
           >
             {packetFlowRunning() ? "⏸" : "▶"}
           </button>
-          <button class="pm-btn" onClick={clearPackets}>✕</button>
+          <button class="pm-btn" onClick={clearPackets} aria-label={t("クリア", "Clear packets")}>✕</button>
         </div>
       </div>
 

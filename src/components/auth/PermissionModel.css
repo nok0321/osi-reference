@@ -174,11 +174,11 @@
 }
 
 .matrix-cell.granted {
-  color: #52c41a;
+  color: var(--color-success);
 }
 
 .matrix-cell.highlighted {
-  background: rgba(82, 196, 26, 0.12);
+  background: var(--color-success-muted);
   font-weight: 700;
 }
 
@@ -203,8 +203,8 @@
   border-color: var(--border-active);
 }
 
-.policy-allow { border-left: 3px solid #52c41a; }
-.policy-deny { border-left: 3px solid #ff4d4f; }
+.policy-allow { border-left: 3px solid var(--color-success); }
+.policy-deny { border-left: 3px solid var(--color-danger); }
 
 .policy-result-badge {
   font-size: 0.6rem;
@@ -216,13 +216,13 @@
 }
 
 .policy-allow .policy-result-badge {
-  color: #52c41a;
-  background: rgba(82, 196, 26, 0.12);
+  color: var(--color-success);
+  background: var(--color-success-muted);
 }
 
 .policy-deny .policy-result-badge {
-  color: #ff4d4f;
-  background: rgba(255, 77, 79, 0.12);
+  color: var(--color-danger);
+  background: var(--color-danger-muted);
 }
 
 .policy-details {
@@ -308,4 +308,196 @@
 .mc-val {
   font-size: 0.7rem;
   color: var(--text-secondary);
+}
+
+.mc-grid-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+/* ACL View */
+.acl-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.acl-desc p {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.acl-matrix {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  overflow-x: auto;
+}
+
+.acl-table {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.acl-table-header, .acl-table-row {
+  display: grid;
+  grid-template-columns: 80px repeat(3, 1fr);
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.acl-corner { /* empty */ }
+
+.acl-res-label {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 0.25rem;
+}
+
+.acl-subj-label {
+  font-size: 0.65rem;
+  color: var(--glow-color);
+  font-weight: 600;
+  padding: 0.25rem 0.35rem;
+}
+
+.acl-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.2rem;
+  min-height: 28px;
+}
+
+.acl-perms {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-wrap: wrap;
+}
+
+.acl-perm-chip {
+  font-size: 0.5rem;
+  font-weight: 700;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+}
+
+.acl-perm-chip.perm-allow {
+  color: var(--color-success);
+  background: var(--color-success-muted);
+}
+
+.acl-perm-chip.perm-deny {
+  color: var(--color-danger);
+  background: var(--color-danger-muted);
+}
+
+.acl-effect {
+  font-size: 0.45rem;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.acl-effect.effect-allow { color: var(--color-success); }
+.acl-effect.effect-deny { color: var(--color-danger); }
+
+.acl-empty {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.acl-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  font-size: 0.6rem;
+  color: var(--text-muted);
+}
+
+.acl-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Policy View */
+.policy-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.policy-desc-text p {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.policy-rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.policy-rule-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  transition: all var(--transition-fast);
+}
+
+.policy-rule-card:hover {
+  border-color: var(--border-active);
+}
+
+.policy-rule-card.policy-allow {
+  border-left: 3px solid var(--color-success);
+}
+
+.policy-rule-card.policy-deny {
+  border-left: 3px solid var(--color-danger);
+}
+
+.policy-rule-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.policy-rule-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.policy-rule-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.policy-code {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--trace-color);
+}
+
+@media (max-width: 600px) {
+  .mc-grid-4 {
+    grid-template-columns: 1fr 1fr;
+  }
+  .acl-table-header, .acl-table-row {
+    grid-template-columns: 60px repeat(3, 1fr);
+  }
 }

@@ -1,5 +1,6 @@
 import { onMount, onCleanup, createEffect } from "solid-js";
-import * as d3 from "d3";
+import { select } from "d3-selection";
+import "d3-transition";
 import { OSI_LAYERS } from "../../data/layers";
 import { LAYER_COLORS } from "../../utils/colors";
 import { useI18n } from "../../i18n/context";
@@ -23,7 +24,7 @@ export default function LayerDiagram(props: LayerDiagramProps) {
   const LAYER_GAP = 6;
 
   onMount(() => {
-    const svg = d3.select(svgRef)
+    const svg = select(svgRef)
       .attr("viewBox", `0 0 ${WIDTH} ${HEIGHT}`)
       .attr("preserveAspectRatio", "xMidYMid meet");
 
@@ -149,7 +150,7 @@ export default function LayerDiagram(props: LayerDiagramProps) {
   });
 
   onCleanup(() => {
-    d3.select(svgRef).selectAll("*").interrupt();
+    select(svgRef).selectAll("*").interrupt();
   });
 
   return (

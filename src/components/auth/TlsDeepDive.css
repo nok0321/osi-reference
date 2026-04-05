@@ -58,13 +58,13 @@
   border-radius: 50%;
 }
 
-.legend-item.plaintext .legend-dot { background: #faad14; }
-.legend-item.handshake .legend-dot { background: #1677ff; }
-.legend-item.encrypted .legend-dot { background: #52c41a; }
+.legend-item.plaintext .legend-dot { background: var(--color-warning); }
+.legend-item.handshake .legend-dot { background: var(--color-info); }
+.legend-item.encrypted .legend-dot { background: var(--color-success); }
 
-.legend-item.plaintext { color: #faad14; }
-.legend-item.handshake { color: #1677ff; }
-.legend-item.encrypted { color: #52c41a; }
+.legend-item.plaintext { color: var(--color-warning); }
+.legend-item.handshake { color: var(--color-info); }
+.legend-item.encrypted { color: var(--color-success); }
 
 /* Step */
 .tls-step {
@@ -75,9 +75,9 @@
   border-left: 3px solid transparent;
 }
 
-.tls-step[data-enc="plaintext"] { border-left-color: #faad14; }
-.tls-step[data-enc="handshake"] { border-left-color: #1677ff; }
-.tls-step[data-enc="encrypted"] { border-left-color: #52c41a; }
+.tls-step[data-enc="plaintext"] { border-left-color: var(--color-warning); }
+.tls-step[data-enc="handshake"] { border-left-color: var(--color-info); }
+.tls-step[data-enc="encrypted"] { border-left-color: var(--color-success); }
 
 .tls-step:hover {
   background: var(--bg-card);
@@ -114,13 +114,13 @@
 }
 
 .client-dot {
-  background: #1677ff;
-  box-shadow: 0 0 6px rgba(22, 119, 255, 0.4);
+  background: var(--color-info);
+  box-shadow: 0 0 6px var(--color-info-strong);
 }
 
 .server-dot {
-  background: #52c41a;
-  box-shadow: 0 0 6px rgba(82, 196, 26, 0.4);
+  background: var(--color-success);
+  box-shadow: 0 0 6px var(--color-success-strong);
 }
 
 .tls-step.current .direction-dot {
@@ -143,13 +143,13 @@
 }
 
 .step-arrow.arrow-right {
-  background: rgba(22, 119, 255, 0.1);
-  color: #1677ff;
+  background: var(--color-info-light);
+  color: var(--color-info);
 }
 
 .step-arrow.arrow-left {
-  background: rgba(82, 196, 26, 0.1);
-  color: #52c41a;
+  background: var(--color-success-light);
+  color: var(--color-success);
 }
 
 .step-arrow.arrow-both {
@@ -207,14 +207,14 @@
 .sdc-crypto {
   margin-bottom: 0.5rem;
   padding: 0.4rem 0.6rem;
-  background: rgba(82, 196, 26, 0.06);
-  border: 1px solid rgba(82, 196, 26, 0.15);
+  background: var(--color-success-subtle);
+  border: 1px solid var(--color-success-dim);
   border-radius: var(--radius-sm);
 }
 
 .crypto-label {
   font-size: 0.55rem;
-  color: #52c41a;
+  color: var(--color-success);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   display: block;

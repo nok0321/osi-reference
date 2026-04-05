@@ -1,9 +1,7 @@
 import { createSignal } from "solid-js";
-import type { AuthSubView } from "../types/security";
 import type { LayerNumber } from "../types";
 
 // Auth view state
-export const [authSubView, setAuthSubView] = createSignal<AuthSubView>("oauth");
 export const [oauthStep, setOauthStep] = createSignal(0);
 export const [jwtActiveSection, setJwtActiveSection] = createSignal<"header" | "payload" | "signature" | null>(null);
 export const [tlsDeepStep, setTlsDeepStep] = createSignal(0);

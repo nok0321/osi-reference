@@ -1,0 +1,236 @@
+/* OidcSamlFlow */
+.oidc-saml-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.os-toggle {
+  display: flex;
+  gap: 0.3rem;
+  padding: 0.3rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  width: fit-content;
+}
+
+.os-mode-btn {
+  padding: 0.35rem 0.8rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.os-mode-btn:hover { color: var(--glow-color); }
+.os-mode-btn.active {
+  color: var(--trace-color);
+  background: rgba(196, 155, 94, 0.1);
+  border-color: var(--trace-color-dim);
+}
+
+.os-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.os-actors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.os-actor-chip {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+  color: var(--ac-color);
+  background: color-mix(in srgb, var(--ac-color) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ac-color) 25%, transparent);
+}
+
+/* Step card */
+.os-step-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  animation: detailFade 0.25s ease;
+}
+
+.os-step-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.os-step-num {
+  font-size: 0.6rem;
+  color: var(--glow-color);
+  background: var(--glow-color-dim);
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+}
+
+.os-step-action {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.os-step-flow {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.os-arrow {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.os-step-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.os-payload {
+  margin-top: 0.5rem;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem;
+  font-size: 0.6rem;
+  color: var(--trace-color);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Timeline */
+.os-timeline {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.os-tl-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.os-tl-item:hover { border-color: var(--border-active); }
+
+.os-tl-item.active {
+  border-color: var(--glow-color);
+  background: var(--glow-color-dim);
+}
+
+.os-tl-item.past {
+  opacity: 0.5;
+}
+
+.os-tl-num {
+  font-size: 0.55rem;
+  color: var(--glow-color);
+}
+
+.os-tl-label {
+  font-size: 0.6rem;
+  color: var(--text-secondary);
+}
+
+.os-tl-item.active .os-tl-label {
+  color: var(--text-primary);
+}
+
+/* Comparison */
+.os-compare {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  overflow-x: auto;
+}
+
+.os-compare-title {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.5rem;
+}
+
+.os-compare-table {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.os-cmp-header, .os-cmp-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 1fr;
+  gap: 0.5rem;
+  padding: 0.35rem 0.25rem;
+}
+
+.os-cmp-header {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.os-cmp-row {
+  font-size: 0.7rem;
+}
+
+.os-cmp-row:hover {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.os-cmp-aspect {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.os-cmp-val {
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+}
+
+@keyframes detailFade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 600px) {
+  .os-cmp-header, .os-cmp-row {
+    grid-template-columns: 80px 1fr 1fr;
+    font-size: 0.6rem;
+  }
+}

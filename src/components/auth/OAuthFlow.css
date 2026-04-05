@@ -13,9 +13,9 @@
 
 .secure-badge {
   font-size: 0.6rem;
-  color: #52c41a;
-  background: rgba(82, 196, 26, 0.12);
-  border: 1px solid rgba(82, 196, 26, 0.3);
+  color: var(--color-success);
+  background: var(--color-success-muted);
+  border: 1px solid var(--color-success-border);
   padding: 0.15rem 0.4rem;
   border-radius: 3px;
 }

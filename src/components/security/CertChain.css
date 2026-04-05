@@ -37,8 +37,8 @@
 }
 
 .cc-toggle.active {
-  border-color: #ff4d4f;
-  color: #ff4d4f;
+  border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
 /* Legend */
@@ -62,9 +62,9 @@
   border-radius: 2px;
 }
 
-.ld.root { background: #ff4d4f; }
-.ld.intermediate { background: #faad14; }
-.ld.leaf { background: #52c41a; }
+.ld.root { background: var(--color-danger); }
+.ld.intermediate { background: var(--color-warning); }
+.ld.leaf { background: var(--color-success); }
 
 /* Tree */
 .cc-tree {
@@ -94,9 +94,9 @@
   box-shadow: 0 0 8px var(--glow-color-dim);
 }
 
-.cert-node.root { border-left: 3px solid #ff4d4f; }
-.cert-node.intermediate { border-left: 3px solid #faad14; }
-.cert-node.leaf { border-left: 3px solid #52c41a; }
+.cert-node.root { border-left: 3px solid var(--color-danger); }
+.cert-node.intermediate { border-left: 3px solid var(--color-warning); }
+.cert-node.leaf { border-left: 3px solid var(--color-success); }
 
 .cert-node.expired {
   opacity: 0.7;
@@ -117,9 +117,9 @@
   background: var(--bg-primary);
 }
 
-.cert-node.root .cert-type-badge { color: #ff4d4f; }
-.cert-node.intermediate .cert-type-badge { color: #faad14; }
-.cert-node.leaf .cert-type-badge { color: #52c41a; }
+.cert-node.root .cert-type-badge { color: var(--color-danger); }
+.cert-node.intermediate .cert-type-badge { color: var(--color-warning); }
+.cert-node.leaf .cert-type-badge { color: var(--color-success); }
 
 .cert-subject {
   font-size: 0.75rem;
@@ -131,8 +131,8 @@
   font-family: var(--font-mono);
   font-size: 0.5rem;
   font-weight: 700;
-  color: #ff4d4f;
-  background: rgba(255, 77, 79, 0.12);
+  color: var(--color-danger);
+  background: var(--color-danger-muted);
   padding: 0.1rem 0.3rem;
   border-radius: 2px;
   animation: expiredPulse 1.5s ease infinite;
@@ -181,13 +181,13 @@
 }
 
 .trust-valid {
-  background: linear-gradient(180deg, #52c41a, #52c41a);
-  box-shadow: 0 0 4px rgba(82, 196, 26, 0.3);
+  background: linear-gradient(180deg, var(--color-success), var(--color-success));
+  box-shadow: 0 0 4px var(--color-success-border);
 }
 
 .trust-broken {
-  background: #ff4d4f;
-  border-left: 1px dashed #ff4d4f;
+  background: var(--color-danger);
+  border-left: 1px dashed var(--color-danger);
 }
 
 /* Info */

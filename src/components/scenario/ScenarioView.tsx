@@ -1,7 +1,7 @@
 import { Show, createMemo } from "solid-js";
 import { useI18n } from "../../i18n/context";
-import { activeScenario, setActiveScenario, scenarioStep, setScenarioStep, setActiveView } from "../../state/app-state";
-import { setAuthSubView } from "../../state/security-state";
+import { useNavigate } from "@solidjs/router";
+import { activeScenario, setActiveScenario, scenarioStep, setScenarioStep } from "../../state/app-state";
 import { getScenario } from "../../data/scenarios";
 import type { ScenarioType } from "../../types";
 import StepControl from "../shared/StepControl";
@@ -13,10 +13,12 @@ import "./ScenarioView.css";
 
 export default function ScenarioView() {
   const { t } = useI18n();
+  const navigate = useNavigate();
 
   const scenario = createMemo(() => getScenario(activeScenario())!);
   const steps = createMemo(() => scenario().steps);
-  const currentStep = createMemo(() => steps()[scenarioStep()]);
+  const safeStepIndex = createMemo(() => Math.min(scenarioStep(), steps().length - 1));
+  const currentStep = createMemo(() => steps()[safeStepIndex()]);
 
   function handleScenarioChange(id: ScenarioType) {
     setActiveScenario(id);
@@ -24,8 +26,7 @@ export default function ScenarioView() {
   }
 
   function goToTlsDeepDive() {
-    setActiveView("auth");
-    setAuthSubView("tls-deep");
+    navigate("/auth/tls-deep");
   }
 
   const isTlsScenario = createMemo(() =>
@@ -62,27 +63,27 @@ export default function ScenarioView() {
         </Show>
       </div>
 
-      <div class="scenario-content">
-        <div class="scenario-left">
-          <DualStackDiagram
-            highlightLayers={currentStep().highlight}
-            activeSide={currentStep().side}
-          />
-        </div>
-        <div class="scenario-right">
-          <Show when={currentStep()}>
+      <Show when={currentStep()}>
+        <div class="scenario-content">
+          <div class="scenario-left">
+            <DualStackDiagram
+              highlightLayers={currentStep()!.highlight}
+              activeSide={currentStep()!.side}
+            />
+          </div>
+          <div class="scenario-right">
             <PacketFlow
-              step={currentStep()}
+              step={currentStep()!}
               totalSteps={steps().length}
             />
             <StepNarration
-              step={currentStep()}
-              stepIndex={scenarioStep()}
+              step={currentStep()!}
+              stepIndex={safeStepIndex()}
               totalSteps={steps().length}
             />
-          </Show>
+          </div>
         </div>
-      </div>
+      </Show>
     </div>
   );
 }

@@ -1,0 +1,216 @@
+/* Fido2WebAuthn */
+.fido2-webauthn {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.fido2-toggle {
+  display: flex;
+  gap: 0.3rem;
+  padding: 0.3rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  width: fit-content;
+}
+
+.fido2-mode-btn {
+  padding: 0.35rem 0.8rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.fido2-mode-btn:hover { color: var(--glow-color); }
+.fido2-mode-btn.active {
+  color: var(--trace-color);
+  background: rgba(196, 155, 94, 0.1);
+  border-color: var(--trace-color-dim);
+}
+
+.fido2-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.fido2-actors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.fido2-actor-chip {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+  color: var(--ac-color);
+  background: color-mix(in srgb, var(--ac-color) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ac-color) 25%, transparent);
+}
+
+/* Step card */
+.fido2-step-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  animation: fido2Fade 0.25s ease;
+}
+
+.fido2-step-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.fido2-step-num {
+  font-size: 0.6rem;
+  color: var(--glow-color);
+  background: var(--glow-color-dim);
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+}
+
+.fido2-step-action {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.fido2-step-flow {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.fido2-arrow {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.fido2-step-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.fido2-payload {
+  margin-top: 0.5rem;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem;
+  font-size: 0.6rem;
+  color: var(--trace-color);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Timeline */
+.fido2-timeline {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.fido2-tl-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.fido2-tl-item:hover { border-color: var(--border-active); }
+.fido2-tl-item.active {
+  border-color: var(--glow-color);
+  background: var(--glow-color-dim);
+}
+.fido2-tl-item.past { opacity: 0.5; }
+
+.fido2-tl-num {
+  font-size: 0.55rem;
+  color: var(--glow-color);
+}
+
+.fido2-tl-label {
+  font-size: 0.6rem;
+  color: var(--text-secondary);
+}
+
+.fido2-tl-item.active .fido2-tl-label {
+  color: var(--text-primary);
+}
+
+/* Key concepts */
+.fido2-concepts {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+}
+
+.fido2-concept-title {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.5rem;
+}
+
+.fido2-concept-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem;
+}
+
+.fido2-concept {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.4rem 0.5rem;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.fc-label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--glow-color);
+}
+
+.fc-val {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+@keyframes fido2Fade {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 600px) {
+  .fido2-concept-grid {
+    grid-template-columns: 1fr;
+  }
+}

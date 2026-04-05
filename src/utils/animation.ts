@@ -1,4 +1,5 @@
-import type { Selection, BaseType } from "d3";
+import type { Selection, BaseType } from "d3-selection";
+import "d3-transition";
 
 /** Animate an SVG path drawing like a circuit trace */
 export function traceDrawEffect(
