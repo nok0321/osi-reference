@@ -8,17 +8,8 @@ import EncapsulationView from "./components/encapsulation/EncapsulationView";
 import ScenarioView from "./components/scenario/ScenarioView";
 import ComparisonView from "./components/comparison/ComparisonView";
 import AuthView from "./components/auth/AuthView";
+import SecurityView from "./components/security/SecurityView";
 import "./app.css";
-
-function PlaceholderView(props: { name: string; icon: string }) {
-  return (
-    <div class="placeholder-view">
-      <div class="icon">{props.icon}</div>
-      <div>{props.name}</div>
-      <div style={{ "font-size": "0.75rem", "opacity": "0.5" }}>Coming soon...</div>
-    </div>
-  );
-}
 
 export default function App() {
   const { lang, toggle, t } = useI18n();
@@ -57,7 +48,7 @@ export default function App() {
             <AuthView />
           </Match>
           <Match when={activeView() === "security"}>
-            <PlaceholderView name={t("セキュリティ", "Security")} icon="⊙" />
+            <SecurityView />
           </Match>
         </Switch>
       </div>
