@@ -1,10 +1,15 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createSignal, onCleanup } from "solid-js";
 import { useI18n } from "../../i18n/context";
 import { tlsDeepStep, setTlsDeepStep } from "../../state/security-state";
 import { TLS_DEEP_STEPS } from "../../data/auth-flows";
 import type { TlsStep } from "../../types/security";
+import { apiPost, apiGet } from "../../api/client";
+import type { TlsClientHelloData, TlsServerHelloData, TlsKeyExchangeData, TlsCertificateData, TlsFinishData } from "../../types/auth-responses";
+import DataFlowPanel from "../shared/DataFlowPanel";
 import StepControl from "../shared/StepControl";
 import "./TlsDeepDive.css";
+
+const SCOPE = "tls-handshake";
 
 export default function TlsDeepDive() {
   const { t } = useI18n();
@@ -127,6 +132,337 @@ export default function TlsDeepDive() {
           }}
         </For>
       </div>
+
+      {/* Interactive TLS Handshake Demo */}
+      <TlsHandshakeDemo />
+    </div>
+  );
+}
+
+/* ── Interactive TLS Handshake Demo ── */
+interface TlsHandshakeState {
+  clientHello?: {
+    clientRandom?: string;
+    clientPublicKey?: string;
+    cipherSuites?: string[];
+    tlsVersion?: string;
+  };
+  serverHello?: {
+    serverRandom?: string;
+    serverPublicKey?: string;
+    selectedCipher?: string;
+  };
+  keyExchange?: {
+    sharedSecret?: string;
+    handshakeSecret?: string;
+    masterSecret?: string;
+    clientPublicKey?: string;
+    serverPublicKey?: string;
+  };
+  finish?: {
+    message?: string;
+    cipherSuite?: string;
+    masterSecret?: string;
+    derivedKeys?: {
+      clientWriteKey?: string;
+      serverWriteKey?: string;
+    };
+  };
+}
+
+interface TlsCertDisplay {
+  subject?: string;
+  issuer?: string;
+  serialNumber?: string;
+  validFrom?: string;
+  validTo?: string;
+  signatureAlgorithm?: string;
+  publicKey?: string;
+  fingerprint?: string;
+}
+
+function TlsHandshakeDemo() {
+  const { t } = useI18n();
+  const ac = new AbortController();
+  onCleanup(() => ac.abort());
+
+  const [active, setActive] = createSignal(false);
+  const [step, setStep] = createSignal(0);
+  const [loading, setLoading] = createSignal(false);
+  const [error, setError] = createSignal("");
+  const [sessionId] = createSignal(`tls-${Date.now()}`);
+  const [handshakeData, setHandshakeData] = createSignal<TlsHandshakeState>({});
+  const [certData, setCertData] = createSignal<TlsCertDisplay | null>(null);
+
+  const STEPS = [
+    { key: "client-hello", label: "ClientHello", labelJa: "ClientHello" },
+    { key: "server-hello", label: "ServerHello", labelJa: "ServerHello" },
+    { key: "key-exchange", label: "Key Exchange", labelJa: "鍵交換" },
+    { key: "finish", label: "Finish", labelJa: "完了" },
+  ];
+
+  async function startHandshake() {
+    setActive(true);
+    setStep(0);
+    setHandshakeData({});
+    setCertData(null);
+    setError("");
+    await runStep(0);
+  }
+
+  async function runStep(idx: number) {
+    setLoading(true);
+    setError("");
+    setStep(idx);
+
+    try {
+      const d = handshakeData();
+
+      if (idx === 0) {
+        // ClientHello
+        const res = await apiPost<TlsClientHelloData>("/api/tls/client-hello", { sessionId: sessionId() }, SCOPE, undefined, ac.signal);
+        if (ac.signal.aborted) return;
+        if (res.error) { setError(res.error); setLoading(false); return; }
+        setHandshakeData({
+          ...d,
+          clientHello: {
+            clientRandom: res.data?.clientRandom,
+            clientPublicKey: res.data?.clientPublicKey,
+            cipherSuites: res.data?.supportedCipherSuites,
+            tlsVersion: res.data?.tlsVersion,
+          },
+        });
+        // Also fetch certificate
+        const certRes = await apiGet<TlsCertificateData>("/api/tls/certificate", SCOPE, ac.signal);
+        if (ac.signal.aborted) return;
+        if (certRes.data) setCertData(certRes.data.certificate);
+      } else if (idx === 1) {
+        // ServerHello
+        const res = await apiPost<TlsServerHelloData>("/api/tls/server-hello", { sessionId: sessionId() }, SCOPE, undefined, ac.signal);
+        if (ac.signal.aborted) return;
+        if (res.error) { setError(res.error); setLoading(false); return; }
+        setHandshakeData({
+          ...d,
+          serverHello: {
+            serverRandom: res.data?.serverRandom,
+            serverPublicKey: res.data?.serverPublicKey,
+            selectedCipher: res.data?.selectedCipherSuite,
+          },
+        });
+      } else if (idx === 2) {
+        // Key Exchange
+        const res = await apiPost<TlsKeyExchangeData>("/api/tls/key-exchange", { sessionId: sessionId() }, SCOPE, undefined, ac.signal);
+        if (ac.signal.aborted) return;
+        if (res.error) { setError(res.error); setLoading(false); return; }
+        setHandshakeData({
+          ...d,
+          keyExchange: {
+            sharedSecret: res.data?.sharedSecret,
+            handshakeSecret: res.data?.handshakeSecret,
+            masterSecret: res.data?.masterSecret,
+            clientPublicKey: d.clientHello?.clientPublicKey,
+            serverPublicKey: d.serverHello?.serverPublicKey,
+          },
+        });
+      } else if (idx === 3) {
+        // Finish
+        const res = await apiPost<TlsFinishData>("/api/tls/finish", { sessionId: sessionId() }, SCOPE, undefined, ac.signal);
+        if (ac.signal.aborted) return;
+        if (res.error) { setError(res.error); setLoading(false); return; }
+        setHandshakeData({
+          ...d,
+          finish: {
+            message: res.data?.message,
+            cipherSuite: res.data?.cipherSuite,
+            masterSecret: d.keyExchange?.masterSecret,
+            derivedKeys: {
+              clientWriteKey: res.data?.clientWriteKey,
+              serverWriteKey: res.data?.serverWriteKey,
+            },
+          },
+        });
+      }
+    } catch (err: unknown) {
+      if (ac.signal.aborted) return;
+      setError(err instanceof Error ? err.message : "Error");
+    }
+    setLoading(false);
+  }
+
+  async function nextStep() {
+    const next = Math.min(step() + 1, STEPS.length - 1);
+    await runStep(next);
+  }
+
+  return (
+    <div class="tls-handshake-demo">
+      <Show when={!active()} fallback={
+        <div class="tls-live-panel">
+          <div class="live-header">
+            <h4 class="demo-title">
+              {t("TLS ハンドシェイクデモ", "TLS Handshake Demo")}
+              <span class="demo-badge">{t("実動作", "Live")}</span>
+            </h4>
+            <button class="demo-submit side-btn" onClick={() => setActive(false)}>
+              {t("閉じる", "Close")}
+            </button>
+          </div>
+
+          {/* Step progress indicator */}
+          <div class="tls-step-progress">
+            <For each={STEPS}>
+              {(s, i) => (
+                <div
+                  class="tls-progress-step"
+                  classList={{
+                    "completed": i() < step(),
+                    "current": i() === step(),
+                    "pending": i() > step(),
+                  }}
+                >
+                  <span class="tls-progress-num mono">{i() + 1}</span>
+                  <span class="tls-progress-label">{t(s.labelJa, s.label)}</span>
+                </div>
+              )}
+            </For>
+          </div>
+
+          {/* Data cards for each completed step */}
+          <div class="live-data-cards">
+            <Show when={handshakeData().clientHello}>
+              <div class="live-data-card">
+                <span class="ldc-label mono">ClientHello</span>
+                <Show when={handshakeData().clientHello?.cipherSuites}>
+                  <div class="ldc-sub">
+                    <span class="ldc-sublabel mono">{t("暗号スイート", "Cipher Suites")}</span>
+                    <For each={handshakeData().clientHello?.cipherSuites}>
+                      {(suite: string) => <span class="ldc-value mono">{suite}</span>}
+                    </For>
+                  </div>
+                </Show>
+                <Show when={handshakeData().clientHello?.clientRandom}>
+                  <div class="ldc-sub">
+                    <span class="ldc-sublabel mono">{t("クライアントランダム", "Client Random")}</span>
+                    <span class="ldc-value mono">{handshakeData().clientHello?.clientRandom}</span>
+                  </div>
+                </Show>
+              </div>
+            </Show>
+
+            <Show when={handshakeData().serverHello}>
+              <div class="live-data-card">
+                <span class="ldc-label mono">ServerHello</span>
+                <Show when={handshakeData().serverHello?.selectedCipher}>
+                  <div class="ldc-sub">
+                    <span class="ldc-sublabel mono">{t("選択された暗号", "Selected Cipher")}</span>
+                    <span class="ldc-value mono">{handshakeData().serverHello?.selectedCipher}</span>
+                  </div>
+                </Show>
+                <Show when={handshakeData().serverHello?.serverRandom}>
+                  <div class="ldc-sub">
+                    <span class="ldc-sublabel mono">{t("サーバーランダム", "Server Random")}</span>
+                    <span class="ldc-value mono">{handshakeData().serverHello?.serverRandom}</span>
+                  </div>
+                </Show>
+              </div>
+            </Show>
+
+            <Show when={handshakeData().keyExchange}>
+              <div class="live-data-card">
+                <span class="ldc-label mono">{t("鍵交換", "Key Exchange")}</span>
+                <Show when={handshakeData().keyExchange?.clientPublicKey}>
+                  <div class="ldc-sub">
+                    <span class="ldc-sublabel mono">{t("クライアント公開鍵 (ECDHE)", "Client Public Key (ECDHE)")}</span>
+                    <span class="ldc-value mono">{handshakeData().keyExchange?.clientPublicKey}</span>
+                  </div>
+                </Show>
+                <Show when={handshakeData().keyExchange?.serverPublicKey}>
+                  <div class="ldc-sub">
+                    <span class="ldc-sublabel mono">{t("サーバー公開鍵 (ECDHE)", "Server Public Key (ECDHE)")}</span>
+                    <span class="ldc-value mono">{handshakeData().keyExchange?.serverPublicKey}</span>
+                  </div>
+                </Show>
+                <Show when={handshakeData().keyExchange?.sharedSecret}>
+                  <div class="ldc-sub">
+                    <span class="ldc-sublabel mono">{t("共有シークレット", "Shared Secret")}</span>
+                    <span class="ldc-value mono">{handshakeData().keyExchange?.sharedSecret}</span>
+                  </div>
+                </Show>
+              </div>
+            </Show>
+
+            <Show when={handshakeData().finish}>
+              <div class="live-data-card success-card">
+                <span class="ldc-label mono">{t("ハンドシェイク完了", "Handshake Complete")}</span>
+                <Show when={handshakeData().finish?.derivedKeys}>
+                  <div class="ldc-sub">
+                    <span class="ldc-sublabel mono">{t("導出された鍵", "Derived Keys")}</span>
+                    <pre class="ldc-value mono">{JSON.stringify(handshakeData().finish?.derivedKeys, null, 2)}</pre>
+                  </div>
+                </Show>
+                <Show when={handshakeData().finish?.masterSecret}>
+                  <div class="ldc-sub">
+                    <span class="ldc-sublabel mono">{t("マスターシークレット", "Master Secret")}</span>
+                    <span class="ldc-value mono">{handshakeData().finish?.masterSecret}</span>
+                  </div>
+                </Show>
+              </div>
+            </Show>
+
+            {/* Certificate details */}
+            <Show when={certData()}>
+              <div class="live-data-card">
+                <span class="ldc-label mono">{t("サーバー証明書", "Server Certificate")}</span>
+                <Show when={certData()?.subject}>
+                  <div class="ldc-sub">
+                    <span class="ldc-sublabel mono">Subject</span>
+                    <span class="ldc-value mono">{certData()?.subject}</span>
+                  </div>
+                </Show>
+                <Show when={certData()?.issuer}>
+                  <div class="ldc-sub">
+                    <span class="ldc-sublabel mono">Issuer</span>
+                    <span class="ldc-value mono">{certData()?.issuer}</span>
+                  </div>
+                </Show>
+                <Show when={certData()?.validFrom}>
+                  <div class="ldc-sub">
+                    <span class="ldc-sublabel mono">{t("有効期間", "Valid")}</span>
+                    <span class="ldc-value mono">{certData()?.validFrom} - {certData()?.validTo}</span>
+                  </div>
+                </Show>
+                <Show when={certData()?.serialNumber}>
+                  <div class="ldc-sub">
+                    <span class="ldc-sublabel mono">{t("シリアル番号", "Serial Number")}</span>
+                    <span class="ldc-value mono">{certData()?.serialNumber}</span>
+                  </div>
+                </Show>
+              </div>
+            </Show>
+          </div>
+
+          <Show when={error()}>
+            <div class="demo-result error">{error()}</div>
+          </Show>
+
+          <button
+            class="demo-submit"
+            onClick={nextStep}
+            disabled={loading() || step() >= STEPS.length - 1}
+          >
+            {loading()
+              ? t("処理中...", "Processing...")
+              : t("次のステップを実行", "Execute Next Step")
+            } ({step() + 1}/{STEPS.length})
+          </button>
+
+          <DataFlowPanel scopeId={SCOPE} defaultOpen={true} />
+        </div>
+      }>
+        <button class="demo-submit" onClick={startHandshake}>
+          {t("TLS ハンドシェイクを開始", "Start TLS Handshake")}
+        </button>
+      </Show>
     </div>
   );
 }

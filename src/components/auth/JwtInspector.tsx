@@ -1,9 +1,177 @@
-import { For, Show, createSignal, createMemo } from "solid-js";
+import { For, Show, createSignal, createMemo, onCleanup } from "solid-js";
 import { useI18n } from "../../i18n/context";
 import { jwtActiveSection, setJwtActiveSection } from "../../state/security-state";
 import { JWT_SECTIONS, SAMPLE_JWT_ENCODED } from "../../data/auth-flows";
 import type { JwtSection, JwtField } from "../../types/security";
+import { apiPost } from "../../api/client";
+import DataFlowPanel from "../shared/DataFlowPanel";
 import "./JwtInspector.css";
+
+const SCOPE = "jwt-ops";
+
+function JwtWorkshop() {
+  const { t } = useI18n();
+  const [algo, setAlgo] = createSignal<"HS256" | "RS256">("HS256");
+  const [claims, setClaims] = createSignal('{\n  "sub": "user123",\n  "name": "Alice",\n  "role": "admin"\n}');
+  const [expiresIn, setExpiresIn] = createSignal(3600);
+  const [generatedToken, setGeneratedToken] = createSignal("");
+  const [verifyResult, setVerifyResult] = createSignal<{ valid: boolean; error?: string } | null>(null);
+  const [loading, setLoading] = createSignal(false);
+  const [countdown, setCountdown] = createSignal<number | null>(null);
+  let countdownTimer: ReturnType<typeof setInterval> | undefined;
+
+  onCleanup(() => {
+    if (countdownTimer) clearInterval(countdownTimer);
+  });
+
+  async function handleSign() {
+    setLoading(true);
+    setVerifyResult(null);
+    try {
+      const parsed = JSON.parse(claims());
+      const res = await apiPost<{ token: string }>("/api/jwt/sign", {
+        claims: parsed,
+        algorithm: algo(),
+        expiresIn: expiresIn(),
+      }, SCOPE);
+      if (res.data) {
+        setGeneratedToken(res.data.token);
+        // Start countdown if short expiry
+        if (expiresIn() <= 30) {
+          startCountdown(expiresIn());
+        } else {
+          setCountdown(null);
+        }
+      }
+    } catch {
+      setVerifyResult({ valid: false, error: "Invalid JSON in claims" });
+    }
+    setLoading(false);
+  }
+
+  function startCountdown(seconds: number) {
+    if (countdownTimer) clearInterval(countdownTimer);
+    setCountdown(seconds);
+    countdownTimer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev === null || prev <= 0) {
+          clearInterval(countdownTimer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }
+
+  async function handleVerify() {
+    if (!generatedToken()) return;
+    const res = await apiPost<{ valid: boolean; error?: string }>("/api/jwt/verify", {
+      token: generatedToken(),
+      algorithm: algo(),
+    }, SCOPE);
+    if (res.data) {
+      setVerifyResult({ valid: res.data.valid, error: res.data.error });
+    }
+  }
+
+  async function handleTamper() {
+    if (!generatedToken()) return;
+    // Tamper with one character in the payload section
+    const parts = generatedToken().split(".");
+    if (parts.length === 3) {
+      const tampered = parts[0] + "." + parts[1].slice(0, -1) + "X" + "." + parts[2];
+      setGeneratedToken(tampered);
+      setVerifyResult(null);
+    }
+  }
+
+  return (
+    <div class="jwt-workshop">
+      <h4 class="demo-title">
+        {t("JWT ワークショップ", "JWT Workshop")}
+        <span class="demo-badge">{t("実動作", "Live")}</span>
+      </h4>
+
+      <div class="jwt-ws-layout">
+        <div class="jwt-ws-input">
+          <div class="jwt-ws-algo">
+            <label class="form-label mono">{t("アルゴリズム", "Algorithm")}</label>
+            <div class="demo-mode-toggle">
+              <button classList={{ active: algo() === "HS256" }} onClick={() => setAlgo("HS256")}>HS256</button>
+              <button classList={{ active: algo() === "RS256" }} onClick={() => setAlgo("RS256")}>RS256</button>
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label class="form-label mono">{t("有効期限", "Expires In")}</label>
+            <div class="jwt-ws-expiry">
+              <button classList={{ active: expiresIn() === 10 }} onClick={() => setExpiresIn(10)}>10s</button>
+              <button classList={{ active: expiresIn() === 60 }} onClick={() => setExpiresIn(60)}>1m</button>
+              <button classList={{ active: expiresIn() === 3600 }} onClick={() => setExpiresIn(3600)}>1h</button>
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label class="form-label mono">{t("カスタムクレーム (JSON)", "Custom Claims (JSON)")}</label>
+            <textarea
+              class="form-input jwt-ws-claims"
+              value={claims()}
+              onInput={(e) => setClaims(e.currentTarget.value)}
+              rows={5}
+              spellcheck={false}
+            />
+          </div>
+
+          <button class="demo-submit" onClick={handleSign} disabled={loading()}>
+            {t("署名してトークン生成", "Sign & Generate Token")}
+          </button>
+        </div>
+
+        <div class="jwt-ws-output">
+          <Show when={generatedToken()}>
+            <div class="form-field">
+              <label class="form-label mono">
+                {t("生成されたトークン", "Generated Token")}
+                <Show when={countdown() !== null}>
+                  <span class="jwt-countdown" classList={{ expired: countdown() === 0 }}>
+                    {countdown()! > 0 ? ` TTL: ${countdown()}s` : " EXPIRED"}
+                  </span>
+                </Show>
+              </label>
+              <textarea
+                class="form-input jwt-ws-token"
+                value={generatedToken()}
+                onInput={(e) => setGeneratedToken(e.currentTarget.value)}
+                rows={4}
+                spellcheck={false}
+              />
+            </div>
+
+            <div class="jwt-ws-actions">
+              <button class="demo-submit" onClick={handleVerify}>
+                {t("検証する", "Verify")}
+              </button>
+              <button class="demo-submit jwt-ws-tamper" onClick={handleTamper}>
+                {t("改竄する", "Tamper")}
+              </button>
+            </div>
+
+            <Show when={verifyResult()}>
+              <div
+                class="demo-result"
+                classList={{ success: verifyResult()!.valid, error: !verifyResult()!.valid }}
+              >
+                {verifyResult()!.valid ? "✓ VALID" : `✗ INVALID — ${verifyResult()!.error}`}
+              </div>
+            </Show>
+          </Show>
+        </div>
+      </div>
+
+      <DataFlowPanel scopeId={SCOPE} />
+    </div>
+  );
+}
 
 export default function JwtInspector() {
   const { t } = useI18n();
@@ -88,9 +256,9 @@ export default function JwtInspector() {
           <div class="decoded-header">
             <span class="decoded-title">{activeSection()!.name.toUpperCase()}</span>
             <span class="decoded-subtitle mono">
-              {activeSection()!.name === "header" && "ALGORITHM & TOKEN TYPE"}
-              {activeSection()!.name === "payload" && "DATA (CLAIMS)"}
-              {activeSection()!.name === "signature" && "VERIFY SIGNATURE"}
+              {activeSection()!.name === "header" && t("アルゴリズム＆トークン型", "ALGORITHM & TOKEN TYPE")}
+              {activeSection()!.name === "payload" && t("データ（クレーム）", "DATA (CLAIMS)")}
+              {activeSection()!.name === "signature" && t("署名検証", "VERIFY SIGNATURE")}
             </span>
           </div>
 
@@ -144,6 +312,9 @@ export default function JwtInspector() {
           )}
         </p>
       </div>
+
+      {/* Live JWT Workshop */}
+      <JwtWorkshop />
     </div>
   );
 }

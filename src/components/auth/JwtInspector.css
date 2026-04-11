@@ -247,3 +247,79 @@
   color: var(--text-secondary);
   line-height: 1.5;
 }
+
+/* ── JWT Workshop ── */
+.jwt-workshop {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+}
+.jwt-ws-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+@media (max-width: 700px) {
+  .jwt-ws-layout { grid-template-columns: 1fr; }
+}
+.jwt-ws-algo {
+  margin-bottom: 0.5rem;
+}
+.jwt-ws-expiry {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.jwt-ws-expiry button {
+  flex: 1;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.jwt-ws-expiry button.active {
+  background: var(--color-accent-purple);
+  color: var(--bg-primary);
+}
+.jwt-workshop .jwt-ws-claims {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  resize: vertical;
+  line-height: 1.5;
+}
+.jwt-workshop .jwt-ws-token {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  resize: vertical;
+  line-height: 1.4;
+  word-break: break-all;
+}
+.jwt-ws-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+.jwt-ws-actions .demo-submit {
+  flex: 1;
+}
+.jwt-workshop .jwt-ws-tamper {
+  background: var(--color-danger);
+}
+.jwt-countdown {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  margin-left: 0.4rem;
+  color: var(--color-warning);
+}
+.jwt-countdown.expired {
+  color: var(--color-danger);
+  animation: invalidPulse 1s ease infinite;
+}

@@ -1,13 +1,119 @@
-import { For, Show, createMemo } from "solid-js";
+import { For, Show, createSignal, createMemo, onCleanup } from "solid-js";
 import { useI18n } from "../../i18n/context";
 import { oauthStep, setOauthStep } from "../../state/security-state";
 import { OAUTH_STEPS, OAUTH_ACTORS } from "../../data/auth-flows";
 import type { OAuthStep } from "../../types/security";
+import { apiPost, apiGet } from "../../api/client";
+import type { OAuthAuthorizePageData, OAuthCodeData, OAuthTokenData } from "../../types/auth-responses";
+import DataFlowPanel from "../shared/DataFlowPanel";
 import StepControl from "../shared/StepControl";
 import "./OAuthFlow.css";
 
+const SCOPE = "oauth-flow";
+
+interface OAuthLiveState {
+  state?: string;
+  authPage?: OAuthAuthorizePageData;
+  code?: string;
+  redirectUri?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  tokenResponse?: OAuthTokenData;
+  resource?: { resource?: { data?: unknown }; [key: string]: unknown };
+}
+
 export default function OAuthFlow() {
   const { t } = useI18n();
+  const ac = new AbortController();
+  onCleanup(() => ac.abort());
+
+  const [liveMode, setLiveMode] = createSignal(false);
+  const [liveStep, setLiveStep] = createSignal(0);
+  const [liveData, setLiveData] = createSignal<OAuthLiveState>({});
+  const [liveLoading, setLiveLoading] = createSignal(false);
+  const [liveError, setLiveError] = createSignal("");
+
+  async function startLiveFlow() {
+    setLiveMode(true);
+    setLiveStep(0);
+    setLiveData({});
+    setLiveError("");
+    // First register a demo user
+    await apiPost("/api/auth/password/register", { username: "oauth-user", password: "demo123" }, undefined, undefined, ac.signal);
+    await runLiveStep(0);
+  }
+
+  async function runLiveStep(step: number) {
+    setLiveLoading(true);
+    setLiveError("");
+    setLiveStep(step);
+    setOauthStep(step);
+
+    try {
+      const state = `state_${Date.now()}`;
+      const d = liveData();
+
+      if (step === 0) {
+        // Step 1: Authorization Request
+        const res = await apiGet<OAuthAuthorizePageData>(
+          `/api/oauth/authorize?client_id=demo-app&redirect_uri=http://localhost:3000/auth/oauth/callback&scope=read&state=${state}`,
+          SCOPE,
+          ac.signal
+        );
+        if (ac.signal.aborted) return;
+        setLiveData({ ...d, state, authPage: res.data });
+      } else if (step === 1) {
+        // Step 2: User Login + Consent
+        const res = await apiPost<OAuthCodeData>("/api/oauth/authorize", {
+          client_id: "demo-app",
+          redirect_uri: "http://localhost:3000/auth/oauth/callback",
+          scope: "read",
+          state: d.state || state,
+          username: "oauth-user",
+          password: "demo123",
+        }, SCOPE, undefined, ac.signal);
+        if (ac.signal.aborted) return;
+        setLiveData({ ...d, code: res.data?.code, redirectUri: res.data?.redirectUri });
+      } else if (step === 2) {
+        // Step 3: Exchange code for tokens (one-time use)
+        if (!d.code) { setLiveError("No authorization code"); setLiveLoading(false); return; }
+        const res = await apiPost<OAuthTokenData>("/api/oauth/token", {
+          grant_type: "authorization_code",
+          code: d.code,
+          client_id: "demo-app",
+          client_secret: "demo-secret-12345",
+        }, SCOPE, undefined, ac.signal);
+        if (ac.signal.aborted) return;
+        if (res.error) { setLiveError(res.error); setLiveLoading(false); return; }
+        setLiveData({
+          ...d,
+          accessToken: res.data?.access_token,
+          refreshToken: res.data?.refresh_token,
+          tokenResponse: res.data,
+        });
+      } else if (step >= 3) {
+        // Step 4+: Access resource with token
+        if (!d.accessToken) { setLiveError("No access token"); setLiveLoading(false); return; }
+        const r = await fetch("/api/oauth/resource", {
+          headers: { "Authorization": `Bearer ${d.accessToken}` },
+          signal: ac.signal,
+        });
+        if (ac.signal.aborted) return;
+        const body = await r.json();
+        if (ac.signal.aborted) return;
+        setLiveData({ ...d, resource: body.data || body });
+      }
+    } catch (err: unknown) {
+      if (ac.signal.aborted) return;
+      setLiveError(err instanceof Error ? err.message : "Error");
+    }
+    setLiveLoading(false);
+  }
+
+  async function nextLiveStep() {
+    const next = Math.min(liveStep() + 1, OAUTH_STEPS.length - 1);
+    await runLiveStep(next);
+  }
 
   const currentStep = createMemo(() => OAUTH_STEPS[oauthStep()]);
 
@@ -151,6 +257,71 @@ export default function OAuthFlow() {
           </div>
         </div>
       </Show>
+
+      {/* Live OAuth Flow */}
+      <div class="oauth-live-section">
+        <Show when={!liveMode()} fallback={
+          <div class="oauth-live-panel">
+            <div class="live-header">
+              <h4 class="demo-title">
+                {t("ライブ OAuth 2.0 フロー", "Live OAuth 2.0 Flow")}
+                <span class="demo-badge">{t("実動作", "Live")}</span>
+              </h4>
+              <button class="demo-submit side-btn" onClick={() => setLiveMode(false)}>
+                {t("閉じる", "Close")}
+              </button>
+            </div>
+
+            <div class="live-data-cards">
+              <Show when={liveData().code}>
+                <div class="live-data-card">
+                  <span class="ldc-label mono">Authorization Code</span>
+                  <span class="ldc-value mono">{liveData().code}</span>
+                </div>
+              </Show>
+              <Show when={liveData().accessToken}>
+                <div class="live-data-card">
+                  <span class="ldc-label mono">Access Token</span>
+                  <span class="ldc-value mono">{liveData().accessToken?.substring(0, 40)}...</span>
+                </div>
+              </Show>
+              <Show when={liveData().refreshToken}>
+                <div class="live-data-card">
+                  <span class="ldc-label mono">Refresh Token</span>
+                  <span class="ldc-value mono">{liveData().refreshToken}</span>
+                </div>
+              </Show>
+              <Show when={liveData().resource}>
+                <div class="live-data-card success-card">
+                  <span class="ldc-label mono">{t("保護リソース取得成功", "Protected Resource")}</span>
+                  <span class="ldc-value mono">{JSON.stringify(liveData().resource?.resource?.data || liveData().resource, null, 1)}</span>
+                </div>
+              </Show>
+            </div>
+
+            <Show when={liveError()}>
+              <div class="demo-result error" role="alert">✗ {liveError()}</div>
+            </Show>
+
+            <button
+              class="demo-submit"
+              onClick={nextLiveStep}
+              disabled={liveLoading() || liveStep() >= OAUTH_STEPS.length - 1}
+            >
+              {liveLoading()
+                ? t("処理中...", "Processing...")
+                : t("次のステップを実行", "Execute Next Step")
+              } ({liveStep() + 1}/{OAUTH_STEPS.length})
+            </button>
+
+            <DataFlowPanel scopeId={SCOPE} defaultOpen={true} />
+          </div>
+        }>
+          <button class="demo-submit oauth-live-btn" onClick={startLiveFlow}>
+            {t("ライブ OAuth フローを開始", "Start Live OAuth Flow")}
+          </button>
+        </Show>
+      </div>
     </div>
   );
 }

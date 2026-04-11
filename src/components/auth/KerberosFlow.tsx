@@ -1,9 +1,14 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createSignal, onCleanup } from "solid-js";
 import { useI18n } from "../../i18n/context";
 import { KERBEROS_ACTORS, KERBEROS_STEPS } from "../../data/protocol-flows";
 import type { KerberosStep, ProtocolActor } from "../../types/security";
+import { apiPost, apiGet } from "../../api/client";
+import type { KerberosAsData, KerberosTgsData, KerberosApData, KerberosTicketCacheData } from "../../types/auth-responses";
+import DataFlowPanel from "../shared/DataFlowPanel";
 import StepControl from "../shared/StepControl";
 import "./KerberosFlow.css";
+
+const SCOPE = "kerberos";
 
 export default function KerberosFlow() {
   const { t } = useI18n();
@@ -127,6 +132,206 @@ export default function KerberosFlow() {
           </For>
         </div>
       </div>
+
+      {/* Interactive Demo */}
+      <KerberosDemo />
+    </div>
+  );
+}
+
+/* ── Interactive Kerberos Demo ── */
+interface KerberosFlowState {
+  asResponse?: KerberosAsData;
+  tgsResponse?: KerberosTgsData;
+  apResponse?: KerberosApData;
+}
+
+function KerberosDemo() {
+  const { t } = useI18n();
+  const ac = new AbortController();
+  onCleanup(() => ac.abort());
+
+  const [principal, setPrincipal] = createSignal("alice@EXAMPLE.COM");
+  const [servicePrincipal, setServicePrincipal] = createSignal("http/web-server");
+  const [loading, setLoading] = createSignal(false);
+  const [error, setError] = createSignal("");
+  const [demoStep, setDemoStep] = createSignal(0);
+  const [flowData, setFlowData] = createSignal<KerberosFlowState>({});
+  const [ticketCache, setTicketCache] = createSignal<KerberosTicketCacheData | null>(null);
+
+  async function runKerberosFlow() {
+    setLoading(true);
+    setError("");
+    setDemoStep(0);
+    setFlowData({});
+    setTicketCache(null);
+
+    try {
+      // Step 1: AS-REQ → get TGT
+      setDemoStep(1);
+      const asRes = await apiPost<KerberosAsData>("/api/kerberos/as-req", {
+        principal: principal(),
+        password: "demo123",
+      }, SCOPE, undefined, ac.signal);
+      if (ac.signal.aborted) return;
+      if (asRes.error) { setError(asRes.error); setLoading(false); return; }
+      setFlowData({ asResponse: asRes.data });
+
+      // Step 2: TGS-REQ → get service ticket
+      setDemoStep(2);
+      const tgsRes = await apiPost<KerberosTgsData>("/api/kerberos/tgs-req", {
+        tgt: asRes.data?.tgt?.encrypted,
+        tgtIv: asRes.data?.tgt?.iv,
+        servicePrincipal: servicePrincipal(),
+      }, SCOPE, undefined, ac.signal);
+      if (ac.signal.aborted) return;
+      if (tgsRes.error) { setError(tgsRes.error); setLoading(false); return; }
+      setFlowData((prev: KerberosFlowState) => ({ ...prev, tgsResponse: tgsRes.data }));
+
+      // Step 3: AP-REQ → authenticate to service
+      setDemoStep(3);
+      const apRes = await apiPost<KerberosApData>("/api/kerberos/ap-req", {
+        serviceTicket: tgsRes.data?.serviceTicket?.encrypted,
+        serviceTicketIv: tgsRes.data?.serviceTicket?.iv,
+      }, SCOPE, undefined, ac.signal);
+      if (ac.signal.aborted) return;
+      if (apRes.error) { setError(apRes.error); setLoading(false); return; }
+      setFlowData((prev: KerberosFlowState) => ({ ...prev, apResponse: apRes.data }));
+
+      // Fetch ticket cache
+      const cacheRes = await apiGet<KerberosTicketCacheData>("/api/kerberos/ticket-cache", SCOPE, ac.signal);
+      if (ac.signal.aborted) return;
+      if (!cacheRes.error) {
+        setTicketCache(cacheRes.data ?? null);
+      }
+    } catch (err: unknown) {
+      if (ac.signal.aborted) return;
+      setError(err instanceof Error ? err.message : "Unknown error");
+    }
+    setLoading(false);
+  }
+
+  const stepLabels = () => [
+    t("AS-REQ (TGT取得)", "AS-REQ (Get TGT)"),
+    t("TGS-REQ (サービスチケット)", "TGS-REQ (Service Ticket)"),
+    t("AP-REQ (サービス認証)", "AP-REQ (Authenticate)"),
+  ];
+
+  return (
+    <div class="kerb-demo-section">
+      <h4 class="demo-title">
+        {t("インタラクティブ Kerberos デモ", "Interactive Kerberos Demo")}
+        <span class="demo-badge">{t("実動作", "Live")}</span>
+      </h4>
+
+      <div class="kerb-demo-form">
+        <div class="form-field">
+          <label class="form-label mono">{t("プリンシパル", "Principal")}</label>
+          <input
+            type="text"
+            class="form-input"
+            value={principal()}
+            onInput={(e) => setPrincipal(e.currentTarget.value)}
+          />
+        </div>
+        <div class="form-field">
+          <label class="form-label mono">{t("サービスプリンシパル", "Service Principal")}</label>
+          <input
+            type="text"
+            class="form-input"
+            value={servicePrincipal()}
+            onInput={(e) => setServicePrincipal(e.currentTarget.value)}
+          />
+        </div>
+      </div>
+
+      <button class="demo-submit" onClick={runKerberosFlow} disabled={loading()}>
+        {loading() ? t("実行中...", "Running...") : t("Kerberos フローを実行", "Run Kerberos Flow")}
+      </button>
+
+      {/* Step progress */}
+      <Show when={demoStep() > 0}>
+        <div class="kerb-demo-steps">
+          <For each={stepLabels()}>
+            {(label, i) => (
+              <div class="kerb-demo-step-indicator" classList={{
+                done: demoStep() > i() + 1,
+                active: demoStep() === i() + 1,
+                pending: demoStep() < i() + 1,
+              }}>
+                <span class="kerb-demo-step-num mono">{i() + 1}</span>
+                <span class="kerb-demo-step-label">{label}</span>
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
+
+      {/* AS-REQ Result */}
+      <Show when={flowData().asResponse}>
+        <div class="kerb-demo-card">
+          <div class="kerb-demo-card-title mono">1. AS-REP: {t("TGT取得", "TGT Obtained")}</div>
+          <Show when={flowData().asResponse?.tgt}>
+            <div class="kerb-demo-kv">
+              <span class="kerb-demo-k mono">{t("暗号化TGT", "Encrypted TGT")}</span>
+              <span class="kerb-demo-v mono">{(flowData().asResponse?.tgt?.encrypted || JSON.stringify(flowData().asResponse?.tgt)).substring(0, 60)}...</span>
+            </div>
+          </Show>
+          <Show when={flowData().asResponse?.decryptedTgt}>
+            <div class="kerb-demo-kv">
+              <span class="kerb-demo-k mono">{t("復号内容", "Decrypted Contents")}</span>
+              <pre class="kerb-demo-pre mono">{JSON.stringify(flowData().asResponse?.decryptedTgt, null, 2)}</pre>
+            </div>
+          </Show>
+          <Show when={!flowData().asResponse?.decryptedTgt && flowData().asResponse}>
+            <pre class="kerb-demo-pre mono">{JSON.stringify(flowData().asResponse, null, 2)}</pre>
+          </Show>
+        </div>
+      </Show>
+
+      {/* TGS-REQ Result */}
+      <Show when={flowData().tgsResponse}>
+        <div class="kerb-demo-card">
+          <div class="kerb-demo-card-title mono">2. TGS-REP: {t("サービスチケット取得", "Service Ticket Obtained")}</div>
+          <Show when={flowData().tgsResponse?.serviceTicket}>
+            <div class="kerb-demo-kv">
+              <span class="kerb-demo-k mono">{t("暗号化サービスチケット", "Encrypted Service Ticket")}</span>
+              <span class="kerb-demo-v mono">{(flowData().tgsResponse?.serviceTicket?.encrypted || JSON.stringify(flowData().tgsResponse?.serviceTicket)).substring(0, 60)}...</span>
+            </div>
+          </Show>
+          <Show when={flowData().tgsResponse?.decryptedServiceTicket}>
+            <div class="kerb-demo-kv">
+              <span class="kerb-demo-k mono">{t("復号内容", "Decrypted Contents")}</span>
+              <pre class="kerb-demo-pre mono">{JSON.stringify(flowData().tgsResponse?.decryptedServiceTicket, null, 2)}</pre>
+            </div>
+          </Show>
+          <Show when={!flowData().tgsResponse?.decryptedServiceTicket && flowData().tgsResponse}>
+            <pre class="kerb-demo-pre mono">{JSON.stringify(flowData().tgsResponse, null, 2)}</pre>
+          </Show>
+        </div>
+      </Show>
+
+      {/* AP-REQ Result */}
+      <Show when={flowData().apResponse}>
+        <div class="kerb-demo-card highlight">
+          <div class="kerb-demo-card-title mono">3. AP-REP: {t("認証成功", "Authentication Success")}</div>
+          <pre class="kerb-demo-pre mono">{JSON.stringify(flowData().apResponse, null, 2)}</pre>
+        </div>
+      </Show>
+
+      {/* Ticket Cache */}
+      <Show when={ticketCache()}>
+        <div class="kerb-demo-card">
+          <div class="kerb-demo-card-title mono">{t("チケットキャッシュ", "Ticket Cache")}</div>
+          <pre class="kerb-demo-pre mono">{JSON.stringify(ticketCache(), null, 2)}</pre>
+        </div>
+      </Show>
+
+      <Show when={error()}>
+        <div class="demo-result error">{error()}</div>
+      </Show>
+
+      <DataFlowPanel scopeId={SCOPE} defaultOpen={true} />
     </div>
   );
 }

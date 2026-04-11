@@ -6,7 +6,10 @@ interface I18nContextValue {
   lang: Accessor<Lang>;
   setLang: (lang: Lang) => void;
   toggle: () => void;
-  t: (ja: string, en: string) => string;
+  t: {
+    (ja: string, en: string): string;
+    (ja: string[], en: string[]): string[];
+  };
 }
 
 const I18nContext = createContext<I18nContextValue>();
@@ -15,7 +18,11 @@ export function I18nProvider(props: ParentProps) {
   const [lang, setLang] = createSignal<Lang>("ja");
 
   const toggle = () => setLang(prev => (prev === "ja" ? "en" : "ja"));
-  const t = (ja: string, en: string) => (lang() === "ja" ? ja : en);
+  function t(ja: string, en: string): string;
+  function t(ja: string[], en: string[]): string[];
+  function t(ja: string | string[], en: string | string[]) {
+    return lang() === "ja" ? ja : en;
+  }
 
   return (
     <I18nContext.Provider value={{ lang, setLang, toggle, t }}>

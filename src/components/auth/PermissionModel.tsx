@@ -1,8 +1,280 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
 import { useI18n } from "../../i18n/context";
 import { RBAC_ROLES, ALL_PERMISSIONS, ABAC_POLICIES, ACL_ENTRIES, ACL_SUBJECTS, ACL_RESOURCES, POLICY_RULES } from "../../data/auth-flows";
 import type { RbacRole, AbacPolicy, AclEntry, PolicyRule } from "../../types/security";
+import { apiPost, apiGet } from "../../api/client";
+import DataFlowPanel from "../shared/DataFlowPanel";
 import "./PermissionModel.css";
+
+const SCOPE = "rbac-check";
+
+function AccessCheckDemo(props: { mode: () => "rbac" | "abac" | "acl" | "policy" }) {
+  const { t } = useI18n();
+  const ac = new AbortController();
+  onCleanup(() => ac.abort());
+
+  const [subject, setSubject] = createSignal("alice");
+  const [resource, setResource] = createSignal("documents");
+  const [action, setAction] = createSignal("read");
+  const [context, setContext] = createSignal("{}");
+  interface EvalStep { rule: string; result: string | boolean; detail: string; reason?: string }
+  interface CheckResult { allowed: boolean; reason?: string; evaluationSteps?: EvalStep[]; steps?: EvalStep[]; error?: string }
+  interface RoleDisplay { id: number; name: string; permissions?: string }
+  const [result, setResult] = createSignal<CheckResult | null>(null);
+  const [loading, setLoading] = createSignal(false);
+  const [roles, setRoles] = createSignal<RoleDisplay[]>([]);
+  const [assignUser, setAssignUser] = createSignal("");
+  const [assignRole, setAssignRole] = createSignal("");
+  const [assignResult, setAssignResult] = createSignal<{ ok: boolean; message: string } | null>(null);
+
+  async function fetchRoles() {
+    const res = await apiGet<{ roles: RoleDisplay[] }>("/api/rbac/roles", SCOPE, ac.signal);
+    if (ac.signal.aborted) return;
+    if (res.data) setRoles(res.data.roles ?? []);
+  }
+
+  async function handleCheck() {
+    setLoading(true);
+    setResult(null);
+
+    const m = props.mode();
+    let endpoint: string;
+    let body: Record<string, unknown>;
+
+    if (m === "rbac") {
+      endpoint = "/api/rbac/check";
+      body = { subject: subject(), resource: resource(), action: action() };
+    } else if (m === "abac") {
+      endpoint = "/api/rbac/abac/check";
+      let ctx = {};
+      try { ctx = JSON.parse(context()); } catch { /* ignore */ }
+      body = { subject: subject(), resource: resource(), action: action(), context: ctx };
+    } else if (m === "acl") {
+      endpoint = "/api/rbac/acl/check";
+      body = { subject: subject(), resource: resource(), action: action() };
+    } else {
+      endpoint = "/api/rbac/check";
+      body = { subject: subject(), resource: resource(), action: action() };
+    }
+
+    const res = await apiPost<CheckResult>(endpoint, body, SCOPE, undefined, ac.signal);
+    if (ac.signal.aborted) return;
+    setLoading(false);
+
+    if (res.error) {
+      setResult({ allowed: false, error: res.error });
+    } else if (res.data) {
+      setResult(res.data);
+    }
+  }
+
+  async function handleAssignRole() {
+    if (!assignUser() || !assignRole()) return;
+    setAssignResult(null);
+    const res = await apiPost<{ message: string }>("/api/rbac/assign", {
+      username: assignUser(),
+      roleName: assignRole(),
+    }, SCOPE, undefined, ac.signal);
+    if (ac.signal.aborted) return;
+    if (res.error) {
+      setAssignResult({ ok: false, message: res.error });
+    } else {
+      setAssignResult({ ok: true, message: t("ロール割り当て成功！", "Role assigned successfully!") });
+      fetchRoles();
+    }
+  }
+
+  onMount(() => fetchRoles());
+
+  return (
+    <div class="password-demo">
+      <h4 class="demo-title">
+        {t("アクセスチェック デモ", "Access Check Demo")}
+        <span class="demo-badge">{t("実動作", "Live")}</span>
+      </h4>
+
+      <div class="demo-layout">
+        <div class="demo-form-area">
+          <form class="demo-form" onSubmit={(e) => { e.preventDefault(); handleCheck(); }}>
+            <div class="form-field">
+              <label class="form-label mono">{t("主体", "Subject")}</label>
+              <input
+                type="text"
+                class="form-input"
+                value={subject()}
+                onInput={(e) => setSubject(e.currentTarget.value)}
+                placeholder="alice"
+              />
+            </div>
+            <div class="form-field">
+              <label class="form-label mono">{t("リソース", "Resource")}</label>
+              <input
+                type="text"
+                class="form-input"
+                value={resource()}
+                onInput={(e) => setResource(e.currentTarget.value)}
+                placeholder="documents"
+              />
+            </div>
+            <div class="form-field">
+              <label class="form-label mono">{t("アクション", "Action")}</label>
+              <input
+                type="text"
+                class="form-input"
+                value={action()}
+                onInput={(e) => setAction(e.currentTarget.value)}
+                placeholder="read"
+              />
+            </div>
+            <Show when={props.mode() === "abac"}>
+              <div class="form-field">
+                <label class="form-label mono">{t("コンテキスト (JSON)", "Context (JSON)")}</label>
+                <input
+                  type="text"
+                  class="form-input"
+                  value={context()}
+                  onInput={(e) => setContext(e.currentTarget.value)}
+                  placeholder='{"time": "09:00", "ip": "10.0.0.1"}'
+                />
+              </div>
+            </Show>
+            <button type="submit" class="demo-submit" disabled={loading()}>
+              {loading()
+                ? t("評価中...", "Evaluating...")
+                : t("アクセスチェック", "Test Access")
+              }
+            </button>
+          </form>
+
+          <Show when={result()}>
+            <div
+              class="demo-result"
+              role="alert"
+              classList={{ success: result()!.allowed, error: !result()!.allowed }}
+            >
+              {result()!.allowed ? "✓ ALLOWED" : "✗ DENIED"}
+              <Show when={result()!.error}>
+                <span> — {result()!.error}</span>
+              </Show>
+            </div>
+            <Show when={result()!.steps}>
+              <div class="db-table-wrap" style={{ "margin-top": "8px" }}>
+                <table class="db-table">
+                  <thead>
+                    <tr>
+                      <th>{t("ルール", "Rule")}</th>
+                      <th>{t("結果", "Result")}</th>
+                      <th>{t("詳細", "Detail")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <For each={result()!.steps}>
+                      {(step: EvalStep) => (
+                        <tr>
+                          <td class="mono">{step.rule || "—"}</td>
+                          <td>
+                            <span
+                              classList={{
+                                "policy-result-badge": true,
+                                "policy-allow": step.result === "allow" || step.result === true,
+                                "policy-deny": step.result === "deny" || step.result === false,
+                              }}
+                              style={{ "font-size": "0.75rem", padding: "2px 6px" }}
+                            >
+                              {String(step.result).toUpperCase()}
+                            </span>
+                          </td>
+                          <td>{step.detail || step.reason || "—"}</td>
+                        </tr>
+                      )}
+                    </For>
+                  </tbody>
+                </table>
+              </div>
+            </Show>
+          </Show>
+        </div>
+
+        <Show when={props.mode() === "rbac"}>
+          <div class="demo-db-area">
+            <div class="db-panel-title mono">
+              {t("ロール割り当て", "Assign Role")}
+            </div>
+            <div class="demo-form" style={{ padding: "8px" }}>
+              <div class="form-field">
+                <label class="form-label mono">{t("ユーザー", "User")}</label>
+                <input
+                  type="text"
+                  class="form-input"
+                  value={assignUser()}
+                  onInput={(e) => setAssignUser(e.currentTarget.value)}
+                  placeholder="alice"
+                />
+              </div>
+              <div class="form-field">
+                <label class="form-label mono">{t("ロール", "Role")}</label>
+                <input
+                  type="text"
+                  class="form-input"
+                  value={assignRole()}
+                  onInput={(e) => setAssignRole(e.currentTarget.value)}
+                  placeholder="admin"
+                />
+              </div>
+              <button
+                type="button"
+                class="demo-submit"
+                disabled={!assignUser() || !assignRole()}
+                onClick={handleAssignRole}
+              >
+                {t("割り当てる", "Assign Role")}
+              </button>
+              <Show when={assignResult()}>
+                <div
+                  class="demo-result"
+                  classList={{ success: assignResult()!.ok, error: !assignResult()!.ok }}
+                >
+                  {assignResult()!.ok ? "✓" : "✗"} {assignResult()!.message}
+                </div>
+              </Show>
+            </div>
+
+            <div class="db-panel-title mono" style={{ "margin-top": "12px" }}>
+              {t("ロール一覧", "Roles")}
+              <button class="db-refresh" onClick={fetchRoles}>↻</button>
+            </div>
+            <Show when={roles().length > 0} fallback={
+              <div class="db-empty">{t("ロールなし", "No roles")}</div>
+            }>
+              <div class="db-table-wrap">
+                <table class="db-table">
+                  <thead>
+                    <tr>
+                      <th>{t("ロール名", "Role")}</th>
+                      <th>{t("権限", "Permissions")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <For each={roles()}>
+                      {(r: RoleDisplay) => (
+                        <tr>
+                          <td class="mono">{r.name}</td>
+                          <td>{r.permissions || "—"}</td>
+                        </tr>
+                      )}
+                    </For>
+                  </tbody>
+                </table>
+              </div>
+            </Show>
+          </div>
+        </Show>
+      </div>
+
+      <DataFlowPanel scopeId={SCOPE} />
+    </div>
+  );
+}
 
 export default function PermissionModel() {
   const { t } = useI18n();
@@ -354,6 +626,8 @@ export default function PermissionModel() {
           </div>
         </div>
       </Show>
+
+      <AccessCheckDemo mode={mode} />
     </div>
   );
 }

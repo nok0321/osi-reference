@@ -1,4 +1,4 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createSignal, type JSX } from "solid-js";
 import { useI18n } from "../../i18n/context";
 import { selectedCertNode, setSelectedCertNode } from "../../state/security-state";
 import { CERTIFICATE_CHAIN, EXPIRED_CERTIFICATE_CHAIN } from "../../data/certificate-data";
@@ -25,7 +25,7 @@ export default function CertChain() {
     return result;
   }
 
-  function renderNode(node: CertificateNode, depth: number): any {
+  function renderNode(node: CertificateNode, depth: number): JSX.Element {
     const expired = isExpired(node);
     const isSelected = () => selectedCertNode() === node.subject;
 

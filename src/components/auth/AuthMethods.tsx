@@ -1,8 +1,168 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createSignal, onMount } from "solid-js";
 import { useI18n } from "../../i18n/context";
 import { AUTH_METHODS, CATEGORY_COLORS } from "../../data/auth-methods";
 import type { AuthMethodInfo } from "../../types/security";
+import { apiPost, apiGet } from "../../api/client";
+import DataFlowPanel from "../shared/DataFlowPanel";
 import "./AuthMethods.css";
+
+const SCOPE = "password-auth";
+
+function PasswordDemo() {
+  const { t } = useI18n();
+  const [mode, setMode] = createSignal<"register" | "login">("register");
+  const [username, setUsername] = createSignal("alice");
+  const [password, setPassword] = createSignal("password123");
+  const [result, setResult] = createSignal<{ ok: boolean; message: string } | null>(null);
+  const [loading, setLoading] = createSignal(false);
+  interface UserDisplay { id: number; username: string; password_hash: string; created_at: string }
+  const [users, setUsers] = createSignal<UserDisplay[]>([]);
+
+  async function fetchUsers() {
+    const res = await apiGet<{ users: UserDisplay[] }>("/api/auth/password/users", SCOPE);
+    if (res.data) setUsers(res.data.users);
+  }
+
+  async function handleSubmit(e: Event) {
+    e.preventDefault();
+    if (!username() || !password()) return;
+    setLoading(true);
+    setResult(null);
+
+    const endpoint = mode() === "register"
+      ? "/api/auth/password/register"
+      : "/api/auth/password/login";
+
+    const res = await apiPost(endpoint, { username: username(), password: password() }, SCOPE);
+    setLoading(false);
+
+    if (res.error) {
+      setResult({ ok: false, message: res.error });
+    } else {
+      setResult({
+        ok: true,
+        message: mode() === "register"
+          ? t("登録成功！", "Registration successful!")
+          : t("ログイン成功！", "Login successful!"),
+      });
+      fetchUsers();
+    }
+  }
+
+  onMount(() => fetchUsers());
+
+  return (
+    <div class="password-demo">
+      <h4 class="demo-title">
+        {t("パスワード認証デモ", "Password Auth Demo")}
+        <span class="demo-badge">{t("実動作", "Live")}</span>
+      </h4>
+
+      <div class="demo-layout">
+        <div class="demo-form-area">
+          <div class="demo-mode-toggle">
+            <button
+              classList={{ active: mode() === "register" }}
+              onClick={() => { setMode("register"); setResult(null); }}
+            >
+              {t("登録", "Register")}
+            </button>
+            <button
+              classList={{ active: mode() === "login" }}
+              onClick={() => { setMode("login"); setResult(null); }}
+            >
+              {t("ログイン", "Login")}
+            </button>
+          </div>
+
+          <form class="demo-form" onSubmit={handleSubmit}>
+            <div class="form-field">
+              <label class="form-label mono">{t("ユーザー名", "Username")}</label>
+              <input
+                type="text"
+                class="form-input"
+                value={username()}
+                onInput={(e) => setUsername(e.currentTarget.value)}
+                placeholder="alice"
+              />
+            </div>
+            <div class="form-field">
+              <label class="form-label mono">{t("パスワード", "Password")}</label>
+              <input
+                type="text"
+                class="form-input"
+                value={password()}
+                onInput={(e) => setPassword(e.currentTarget.value)}
+                placeholder="password123"
+              />
+              <span class="form-hint">
+                {t("※教育用のため平文表示", "Shown in plaintext for educational purposes")}
+              </span>
+            </div>
+            <button type="submit" class="demo-submit" disabled={loading()}>
+              {loading()
+                ? t("処理中...", "Processing...")
+                : mode() === "register"
+                  ? t("登録する", "Register")
+                  : t("ログインする", "Login")
+              }
+            </button>
+          </form>
+
+          <Show when={result()}>
+            <div
+              class="demo-result"
+              role="alert"
+              classList={{ success: result()!.ok, error: !result()!.ok }}
+            >
+              {result()!.ok ? "✓" : "✗"} {result()!.message}
+            </div>
+          </Show>
+        </div>
+
+        <div class="demo-db-area">
+          <div class="db-panel-title mono">
+            {t("users テーブル", "users table")}
+            <button class="db-refresh" onClick={fetchUsers} aria-label={t("更新", "Refresh")}>↻</button>
+          </div>
+          <Show when={users().length > 0} fallback={
+            <div class="db-empty">{t("ユーザーなし", "No users yet")}</div>
+          }>
+            <div class="db-table-wrap">
+              <table class="db-table">
+                <thead>
+                  <tr>
+                    <th>id</th>
+                    <th>username</th>
+                    <th>password_hash</th>
+                    <th>created_at</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <For each={users()}>
+                    {(u) => (
+                      <tr>
+                        <td>{u.id}</td>
+                        <td>{u.username}</td>
+                        <td class="db-hash-cell">
+                          <span class="hash-preview">{u.password_hash.substring(0, 20)}...</span>
+                          <span class="hash-full">{u.password_hash}</span>
+                        </td>
+                        <td>{u.created_at}</td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
+          </Show>
+        </div>
+      </div>
+
+      <DataFlowPanel scopeId={SCOPE} />
+    </div>
+  );
+}
 
 export default function AuthMethods() {
   const { t } = useI18n();
@@ -10,6 +170,8 @@ export default function AuthMethods() {
 
   return (
     <div class="auth-methods">
+      <PasswordDemo />
+
       <p class="auth-methods-desc">
         {t(
           "認証方式は「知識（知っていること）」「所有物（持っているもの）」「生体（自分自身）」の3要素に分類されます。",
@@ -42,7 +204,11 @@ export default function AuthMethods() {
                 class="method-card"
                 classList={{ expanded: expandedId() === method.id }}
                 style={{ "--m-color": color }}
+                role="button"
+                tabIndex={0}
+                aria-expanded={expandedId() === method.id}
                 onClick={() => setExpandedId(prev => prev === method.id ? null : method.id)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpandedId(prev => prev === method.id ? null : method.id); } }}
               >
                 <div class="method-header">
                   <span class="method-icon">{method.icon}</span>
@@ -60,7 +226,7 @@ export default function AuthMethods() {
                     <div class="detail-section">
                       <span class="detail-label mono">{t("長所", "Strengths")}</span>
                       <ul class="detail-list strengths-list">
-                        <For each={t(method.strengthsJa, method.strengths) as unknown as string[]}>
+                        <For each={t(method.strengthsJa, method.strengths)}>
                           {(s: string) => <li>{s}</li>}
                         </For>
                       </ul>
@@ -68,7 +234,7 @@ export default function AuthMethods() {
                     <div class="detail-section">
                       <span class="detail-label mono">{t("短所", "Weaknesses")}</span>
                       <ul class="detail-list weaknesses-list">
-                        <For each={t(method.weaknessesJa, method.weaknesses) as unknown as string[]}>
+                        <For each={t(method.weaknessesJa, method.weaknesses)}>
                           {(w: string) => <li>{w}</li>}
                         </For>
                       </ul>

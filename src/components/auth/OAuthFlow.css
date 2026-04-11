@@ -258,3 +258,60 @@
     font-size: 0.55rem;
   }
 }
+
+/* ── OAuth Live Flow ── */
+.oauth-live-section { margin-top: 0.5rem; }
+.oauth-live-btn {
+  width: 100%;
+  padding: 0.6rem;
+}
+.oauth-live-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+}
+.live-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+.live-data-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+.live-data-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.6rem;
+}
+.live-data-card.success-card {
+  border-color: rgba(74, 222, 128, 0.3);
+  background: rgba(74, 222, 128, 0.05);
+}
+.ldc-label {
+  display: block;
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--glow-color);
+  text-transform: uppercase;
+  margin-bottom: 0.2rem;
+}
+.ldc-value {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 600px) {
+  .oauth-actors { flex-wrap: wrap; gap: 0.3rem; }
+  .oauth-actor-chip { font-size: 0.6rem; padding: 0.2rem 0.4rem; }
+  .oauth-step-card { padding: 0.5rem; }
+  .oauth-swimlane { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}

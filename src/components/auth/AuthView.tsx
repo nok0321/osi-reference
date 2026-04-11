@@ -1,4 +1,4 @@
-import { Match, Switch, For, createMemo, createEffect } from "solid-js";
+import { Match, Switch, For, createMemo, createEffect, ErrorBoundary } from "solid-js";
 import { useNavigate, useLocation } from "@solidjs/router";
 import { useI18n } from "../../i18n/context";
 import { markSectionViewed } from "../../utils/progress";
@@ -13,6 +13,8 @@ import OidcSamlFlow from "./OidcSamlFlow";
 import Fido2WebAuthn from "./Fido2WebAuthn";
 import KerberosFlow from "./KerberosFlow";
 import SsoPatterns from "./SsoPatterns";
+import MfaFlow from "./MfaFlow";
+import PasskeyFlow from "./PasskeyFlow";
 import "./AuthView.css";
 
 interface SubTab {
@@ -31,11 +33,27 @@ const SUB_TABS: SubTab[] = [
   { id: "auth-methods", label: "Auth Methods", labelJa: "\u8A8D\u8A3C\u65B9\u5F0F", icon: "\u2609" },
   { id: "oidc-saml", label: "OIDC & SAML", labelJa: "OIDC & SAML", icon: "\u21CC" },
   { id: "fido2", label: "FIDO2/WebAuthn", labelJa: "FIDO2/WebAuthn", icon: "\u2295" },
+  { id: "mfa", label: "MFA/TOTP", labelJa: "MFA/TOTP", icon: "\u29BF" },
+  { id: "passkey", label: "Passkey", labelJa: "\u30D1\u30B9\u30AD\u30FC", icon: "\u25CE" },
   { id: "kerberos", label: "Kerberos", labelJa: "Kerberos", icon: "\u2298" },
   { id: "sso-idp-apikey", label: "SSO / IdP / API Key", labelJa: "SSO / IdP / API\u30AD\u30FC", icon: "\u2297" },
 ];
 
 const VALID_SUBTABS = new Set<string>(SUB_TABS.map(t => t.id));
+
+function AuthErrorFallback(props: { error: Error; reset: () => void }) {
+  return (
+    <div class="auth-error-fallback">
+      <h3>Something went wrong</h3>
+      <pre class="mono" style={{ "white-space": "pre-wrap", "word-break": "break-all", color: "var(--color-error)" }}>
+        {props.error.message}
+      </pre>
+      <button class="subtab" onClick={() => props.reset()} style={{ "margin-top": "1rem" }}>
+        Try Again
+      </button>
+    </div>
+  );
+}
 
 export default function AuthView() {
   const { t } = useI18n();
@@ -65,56 +83,82 @@ export default function AuthView() {
         </h2>
       </div>
 
-      <nav class="auth-subtabs" role="tablist">
+      <nav class="auth-subtabs" role="tablist" aria-label={t("認証方式タブ", "Authentication method tabs")}>
         <For each={SUB_TABS}>
           {(tab) => (
             <button
               class="subtab"
               classList={{ active: activeSubTab() === tab.id }}
               onClick={() => handleSubTabChange(tab.id)}
+              onKeyDown={(e) => {
+                const tabs = SUB_TABS;
+                const idx = tabs.findIndex((s) => s.id === tab.id);
+                if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+                  e.preventDefault();
+                  const next = tabs[(idx + 1) % tabs.length];
+                  handleSubTabChange(next.id);
+                  (e.currentTarget.parentElement?.children[(idx + 1) % tabs.length] as HTMLElement)?.focus();
+                } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+                  e.preventDefault();
+                  const prev = tabs[(idx - 1 + tabs.length) % tabs.length];
+                  handleSubTabChange(prev.id);
+                  (e.currentTarget.parentElement?.children[(idx - 1 + tabs.length) % tabs.length] as HTMLElement)?.focus();
+                }
+              }}
               role="tab"
+              id={`auth-tab-${tab.id}`}
               aria-selected={activeSubTab() === tab.id}
+              aria-controls="auth-tabpanel"
+              tabIndex={activeSubTab() === tab.id ? 0 : -1}
             >
-              <span class="subtab-icon">{tab.icon}</span>
+              <span class="subtab-icon" aria-hidden="true">{tab.icon}</span>
               <span class="subtab-label">{t(tab.labelJa, tab.label)}</span>
             </button>
           )}
         </For>
       </nav>
 
-      <div class="auth-content">
-        <Switch>
-          <Match when={activeSubTab() === "oauth"}>
-            <OAuthFlow />
-          </Match>
-          <Match when={activeSubTab() === "jwt"}>
-            <JwtInspector />
-          </Match>
-          <Match when={activeSubTab() === "tls-deep"}>
-            <TlsDeepDive />
-          </Match>
-          <Match when={activeSubTab() === "session-vs-token"}>
-            <AuthComparison />
-          </Match>
-          <Match when={activeSubTab() === "rbac"}>
-            <PermissionModel />
-          </Match>
-          <Match when={activeSubTab() === "auth-methods"}>
-            <AuthMethods />
-          </Match>
-          <Match when={activeSubTab() === "oidc-saml"}>
-            <OidcSamlFlow />
-          </Match>
-          <Match when={activeSubTab() === "fido2"}>
-            <Fido2WebAuthn />
-          </Match>
-          <Match when={activeSubTab() === "kerberos"}>
-            <KerberosFlow />
-          </Match>
-          <Match when={activeSubTab() === "sso-idp-apikey"}>
-            <SsoPatterns />
-          </Match>
-        </Switch>
+      <div class="auth-content" role="tabpanel" id="auth-tabpanel" aria-labelledby={`auth-tab-${activeSubTab()}`}>
+        <ErrorBoundary fallback={(err, reset) => <AuthErrorFallback error={err} reset={reset} />}>
+          <Switch>
+            <Match when={activeSubTab() === "oauth"}>
+              <OAuthFlow />
+            </Match>
+            <Match when={activeSubTab() === "jwt"}>
+              <JwtInspector />
+            </Match>
+            <Match when={activeSubTab() === "tls-deep"}>
+              <TlsDeepDive />
+            </Match>
+            <Match when={activeSubTab() === "session-vs-token"}>
+              <AuthComparison />
+            </Match>
+            <Match when={activeSubTab() === "rbac"}>
+              <PermissionModel />
+            </Match>
+            <Match when={activeSubTab() === "auth-methods"}>
+              <AuthMethods />
+            </Match>
+            <Match when={activeSubTab() === "oidc-saml"}>
+              <OidcSamlFlow />
+            </Match>
+            <Match when={activeSubTab() === "fido2"}>
+              <Fido2WebAuthn />
+            </Match>
+            <Match when={activeSubTab() === "mfa"}>
+              <MfaFlow />
+            </Match>
+            <Match when={activeSubTab() === "passkey"}>
+              <PasskeyFlow />
+            </Match>
+            <Match when={activeSubTab() === "kerberos"}>
+              <KerberosFlow />
+            </Match>
+            <Match when={activeSubTab() === "sso-idp-apikey"}>
+              <SsoPatterns />
+            </Match>
+          </Switch>
+        </ErrorBoundary>
       </div>
     </div>
   );

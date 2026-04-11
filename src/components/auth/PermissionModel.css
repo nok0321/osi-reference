@@ -500,4 +500,8 @@
   .acl-table-header, .acl-table-row {
     grid-template-columns: 60px repeat(3, 1fr);
   }
+  .permission-matrix { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .permission-matrix table { min-width: 400px; }
+  .rbac-demo-layout { grid-template-columns: 1fr; }
+  .eval-steps { font-size: 0.7rem; }
 }

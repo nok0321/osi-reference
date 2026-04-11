@@ -2,7 +2,8 @@ import type { LayerNumber } from "./index";
 
 export type AuthSubView =
   | "oauth" | "jwt" | "tls-deep" | "session-vs-token" | "rbac"
-  | "auth-methods" | "oidc-saml" | "fido2" | "kerberos" | "sso-idp-apikey";
+  | "auth-methods" | "oidc-saml" | "fido2" | "kerberos" | "sso-idp-apikey"
+  | "mfa" | "passkey";
 
 export interface OAuthStep {
   stepNumber: number;

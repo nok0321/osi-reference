@@ -4,8 +4,12 @@ import solidPlugin from "vite-plugin-solid";
 export default defineConfig({
   plugins: [solidPlugin({ hot: false })],
   test: {
-    environment: "jsdom",
     globals: true,
+    // Server tests (Node.js), frontend tests (jsdom)
+    environmentMatchGlobs: [
+      ["server/**", "node"],
+      ["src/**", "jsdom"],
+    ],
     setupFiles: ["./src/test/setup.ts"],
     deps: {
       optimizer: {

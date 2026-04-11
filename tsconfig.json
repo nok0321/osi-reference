@@ -11,6 +11,10 @@
     "types": ["vite/client", "vitest/globals"],
     "noEmit": true,
     "isolatedModules": true,
-    "skipLibCheck": true
-  }
+    "skipLibCheck": true,
+    "paths": {
+      "@shared/*": ["./shared/*"]
+    }
+  },
+  "include": ["src", "shared"]
 }

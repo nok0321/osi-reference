@@ -378,3 +378,203 @@ export const OIDC_VS_SAML: ProtocolComparison[] = [
     saml: "Poor (heavy XML parsing)", samlJa: "不向き（XMLパースが重い）",
   },
 ];
+
+/* ──── TOTP / MFA ──── */
+
+export const TOTP_ACTORS: ProtocolActor[] = [
+  { id: "user", name: "User", nameJa: "ユーザー", color: "#3B82F6" },
+  { id: "server", name: "Server", nameJa: "サーバー", color: "#A855F7" },
+  { id: "app", name: "Authenticator App", nameJa: "認証アプリ", color: "#F59E0B" },
+];
+
+export const TOTP_ENROLL_STEPS: ProtocolFlowStep[] = [
+  {
+    stepNumber: 1, from: "user", to: "server",
+    action: "Request Enrollment",
+    actionJa: "登録リクエスト",
+    description: "User initiates TOTP enrollment. Server generates a 20-byte random secret and base32-encodes it.",
+    descriptionJa: "ユーザーがTOTP登録を開始。サーバーが20バイトのランダムシークレットを生成しbase32エンコード。",
+    dataPayload: "POST /api/mfa/totp/enroll/start { username }",
+    osiLayer: 7,
+  },
+  {
+    stepNumber: 2, from: "server", to: "user",
+    action: "Return Secret + QR",
+    actionJa: "シークレット＋QRコード返却",
+    description: "Server returns the base32 secret and an otpauth:// URI encoded as a QR code. The URI contains the secret, issuer name, algorithm (SHA1), digits (6), and period (30s).",
+    descriptionJa: "サーバーがbase32シークレットとotpauth:// URIをQRコードで返却。URIにはシークレット、発行者名、アルゴリズム(SHA1)、桁数(6)、周期(30秒)を含む。",
+    dataPayload: 'otpauth://totp/OSI%20Reference:alice?secret=JBSWY3DPEHPK3PXP&issuer=OSI%20Reference&algorithm=SHA1&digits=6&period=30',
+    osiLayer: 7,
+  },
+  {
+    stepNumber: 3, from: "user", to: "app",
+    action: "Scan QR Code",
+    actionJa: "QRコードスキャン",
+    description: "User scans the QR code with an authenticator app (Google Authenticator, Authy, 1Password). The app extracts and stores the shared secret locally.",
+    descriptionJa: "ユーザーが認証アプリ（Google Authenticator、Authy、1Password）でQRコードをスキャン。アプリがシークレットを抽出しローカルに保存。",
+    osiLayer: 7,
+  },
+  {
+    stepNumber: 4, from: "app", to: "user",
+    action: "Generate 6-Digit Code",
+    actionJa: "6桁コード生成",
+    description: "Authenticator app computes TOTP: counter = floor(UNIX_TIME / 30), HMAC-SHA1(secret, counter), dynamic truncation, mod 10^6. Displays a 6-digit code valid for 30 seconds.",
+    descriptionJa: "認証アプリがTOTPを計算: counter = floor(UNIX_TIME / 30), HMAC-SHA1(secret, counter), 動的トランケーション, mod 10^6。30秒有効な6桁コードを表示。",
+    dataPayload: 'HMAC-SHA1(key, counter_bytes) → truncate → mod 10^6 → "482901"',
+    osiLayer: 7,
+  },
+  {
+    stepNumber: 5, from: "user", to: "server",
+    action: "Submit Verification Code",
+    actionJa: "検証コード送信",
+    description: "User enters the 6-digit code from the app. Server computes TOTP for counters t-1, t, t+1 (clock drift tolerance ±30s) and compares.",
+    descriptionJa: "ユーザーがアプリに表示された6桁コードを入力。サーバーがカウンタ t-1, t, t+1（クロックドリフト許容±30秒）のTOTPを計算して比較。",
+    dataPayload: "POST /api/mfa/totp/enroll/verify { username, code: \"482901\" }",
+    osiLayer: 7,
+  },
+  {
+    stepNumber: 6, from: "server", to: "user",
+    action: "Enrollment Complete",
+    actionJa: "登録完了",
+    description: "Code matches → MFA marked as verified. Future logins will require password + TOTP (two-factor authentication).",
+    descriptionJa: "コードが一致 → MFA検証済みに設定。以降のログインではパスワード + TOTPの2要素認証が必要に。",
+    osiLayer: 7,
+  },
+];
+
+export const TOTP_LOGIN_STEPS: ProtocolFlowStep[] = [
+  {
+    stepNumber: 1, from: "user", to: "server",
+    action: "Password (Factor 1)",
+    actionJa: "パスワード（第1要素）",
+    description: "User submits username + password. Server verifies with bcrypt. If MFA is enabled, a short-lived challengeId is issued instead of a session.",
+    descriptionJa: "ユーザーがユーザー名＋パスワードを送信。サーバーがbcryptで検証。MFA有効の場合、セッションではなく短命のchallengeIdを発行。",
+    dataPayload: "POST /api/mfa/totp/login/step1 { username, password }",
+    osiLayer: 7,
+  },
+  {
+    stepNumber: 2, from: "server", to: "user",
+    action: "Challenge Issued",
+    actionJa: "チャレンジ発行",
+    description: "Password verified. Server responds with requiresMfa: true and a challengeId (UUID, valid for 5 minutes). This binds the verified password to the pending TOTP check.",
+    descriptionJa: "パスワード検証完了。サーバーが requiresMfa: true と challengeId（UUID、5分有効）を返却。検証済みパスワードをTOTPチェックに紐付け。",
+    dataPayload: '{ requiresMfa: true, challengeId: "550e8400-e29b..." }',
+    osiLayer: 7,
+  },
+  {
+    stepNumber: 3, from: "app", to: "user",
+    action: "TOTP Code (Factor 2)",
+    actionJa: "TOTPコード（第2要素）",
+    description: "Authenticator app shows the current 6-digit TOTP code. The app and server independently compute the same code from the shared secret and current time.",
+    descriptionJa: "認証アプリが現在の6桁TOTPコードを表示。アプリとサーバーが共有シークレットと現在時刻から独立に同じコードを計算。",
+    osiLayer: 7,
+  },
+  {
+    stepNumber: 4, from: "user", to: "server",
+    action: "Submit TOTP Code",
+    actionJa: "TOTPコード送信",
+    description: "User enters the 6-digit code along with the challengeId. Server looks up the challenge, fetches the user's secret, and verifies the TOTP code.",
+    descriptionJa: "ユーザーが6桁コードとchallengeIdを送信。サーバーがチャレンジを検索し、ユーザーのシークレットを取得してTOTPコードを検証。",
+    dataPayload: "POST /api/mfa/totp/login/step2 { challengeId, code: \"482901\" }",
+    osiLayer: 7,
+  },
+  {
+    stepNumber: 5, from: "server", to: "user",
+    action: "Login Complete",
+    actionJa: "ログイン完了",
+    description: "Both factors verified: knowledge (password) + possession (authenticator app). Login successful. ChallengeId consumed (single use).",
+    descriptionJa: "両要素の検証完了: 知識（パスワード）+ 所有物（認証アプリ）。ログイン成功。challengeIdは消費済み（1回限り）。",
+    osiLayer: 7,
+  },
+];
+
+/* ──── Passkey (Discoverable Credential / Usernameless WebAuthn) ──── */
+
+export const PASSKEY_ACTORS: ProtocolActor[] = FIDO2_ACTORS;
+
+export const PASSKEY_REGISTRATION_STEPS: ProtocolFlowStep[] = [
+  {
+    stepNumber: 1, from: "user", to: "rp",
+    action: "Initiate Passkey Registration",
+    actionJa: "パスキー登録開始",
+    description: "User enters username and clicks Register. Server generates a random challenge with residentKey: 'required' — the authenticator MUST create a discoverable credential.",
+    descriptionJa: "ユーザーがユーザー名を入力して登録をクリック。サーバーが residentKey: 'required' でランダムチャレンジを生成 — 認証器はdiscoverable credentialの作成が必須。",
+    dataPayload: "authenticatorSelection: { residentKey: 'required', userVerification: 'required' }",
+    osiLayer: 7,
+  },
+  {
+    stepNumber: 2, from: "rp", to: "browser",
+    action: "Send Registration Options",
+    actionJa: "登録オプション送信",
+    description: "Server returns PublicKeyCredentialCreationOptions with the challenge, RP info, and user info (id = userHandle). The user handle will be stored INSIDE the authenticator.",
+    descriptionJa: "サーバーがPublicKeyCredentialCreationOptionsを返却（チャレンジ、RP情報、ユーザー情報）。user handle（user.id）は認証器内部に保存される。",
+    dataPayload: "user: { id: base64url(userId), name: 'alice', displayName: 'alice' }",
+    osiLayer: 7,
+  },
+  {
+    stepNumber: 3, from: "browser", to: "authn",
+    action: "Create Discoverable Credential",
+    actionJa: "Discoverable Credential 作成",
+    description: "Browser calls navigator.credentials.create(). Authenticator prompts for biometric/PIN, generates a key pair, and stores the private key + rpId + userHandle locally. This is a RESIDENT KEY — discoverable without server hints.",
+    descriptionJa: "ブラウザがnavigator.credentials.create()を呼び出し。認証器が生体/PINを要求し、鍵ペアを生成、秘密鍵 + rpId + userHandle をローカルに保存。これがresident key — サーバーのヒントなしで発見可能。",
+    dataPayload: "Authenticator stores: { rpId, credentialId, privateKey, userHandle }",
+    osiLayer: 7,
+  },
+  {
+    stepNumber: 4, from: "authn", to: "rp",
+    action: "Return Attestation",
+    actionJa: "アテステーション返却",
+    description: "Authenticator returns the attestation object containing the new public key and the credential ID. Server verifies and stores the public key mapped to the user.",
+    descriptionJa: "認証器がアテステーションオブジェクト（新しい公開鍵とクレデンシャルID）を返却。サーバーが検証し、公開鍵をユーザーに紐付けて保存。",
+    dataPayload: "credentialDeviceType: 'multiDevice' | 'singleDevice', credentialBackedUp: true/false",
+    osiLayer: 7,
+  },
+];
+
+export const PASSKEY_AUTH_STEPS: ProtocolFlowStep[] = [
+  {
+    stepNumber: 1, from: "user", to: "rp",
+    action: "Start Usernameless Auth",
+    actionJa: "ユーザー名なし認証開始",
+    description: "User clicks 'Sign in with Passkey' WITHOUT entering a username. Server generates a challenge with allowCredentials: [] (empty!) — no specific credential hints.",
+    descriptionJa: "ユーザーがユーザー名を入力せずに「パスキーでサインイン」をクリック。サーバーが allowCredentials: []（空！）でチャレンジを生成 — 特定のクレデンシャル指定なし。",
+    dataPayload: "POST /api/passkey/auth/options { }  ← no username!",
+    osiLayer: 7,
+  },
+  {
+    stepNumber: 2, from: "rp", to: "browser",
+    action: "Empty allowCredentials",
+    actionJa: "空のallowCredentials",
+    description: "Server returns options with no allowCredentials. This prevents account enumeration — the server doesn't reveal which users have registered. The browser will check its own credential store.",
+    descriptionJa: "サーバーがallowCredentialsなしのオプションを返却。これによりアカウント列挙を防止 — サーバーはどのユーザーが登録済みか開示しない。ブラウザが自身のクレデンシャルストアを確認。",
+    dataPayload: "allowCredentials: []  — 'show me ANY passkey for this site'",
+    osiLayer: 7,
+  },
+  {
+    stepNumber: 3, from: "browser", to: "authn",
+    action: "Credential Picker / Autofill",
+    actionJa: "クレデンシャルピッカー / オートフィル",
+    description: "Browser searches for discoverable credentials matching this rpId. OS shows a picker (or Conditional UI autofill dropdown). User selects an account and confirms with biometric/PIN.",
+    descriptionJa: "ブラウザがこのrpIdに一致するdiscoverable credentialを検索。OSがピッカー（またはConditional UIのオートフィルドロップダウン）を表示。ユーザーがアカウントを選択し生体/PINで確認。",
+    dataPayload: "OS/Browser shows: [Alice (localhost), Bob (localhost)] → user picks one",
+    osiLayer: 7,
+  },
+  {
+    stepNumber: 4, from: "authn", to: "browser",
+    action: "Sign with Private Key",
+    actionJa: "秘密鍵で署名",
+    description: "Authenticator signs the challenge with the selected credential's private key and includes the userHandle (set during registration) in the response.",
+    descriptionJa: "認証器が選択されたクレデンシャルの秘密鍵でチャレンジに署名し、レスポンスに userHandle（登録時に設定）を含める。",
+    dataPayload: "response.userHandle = base64url(userId)  ← this is how the server identifies the user!",
+    osiLayer: 7,
+  },
+  {
+    stepNumber: 5, from: "browser", to: "rp",
+    action: "Verify & Resolve Identity",
+    actionJa: "検証とID解決",
+    description: "Server receives the signed assertion. Looks up the credential by ID (no username needed), decodes the userHandle to find the user, verifies the signature, and checks the counter.",
+    descriptionJa: "サーバーが署名済みアサーションを受信。クレデンシャルIDで検索（ユーザー名不要）、userHandleをデコードしてユーザーを特定、署名を検証、カウンターをチェック。",
+    dataPayload: "credential_id → user_id → username (resolved server-side, never sent by client)",
+    osiLayer: 7,
+  },
+];

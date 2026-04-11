@@ -1,11 +1,213 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createSignal, onMount, onCleanup } from "solid-js";
 import { useI18n } from "../../i18n/context";
 import {
   FIDO2_ACTORS, FIDO2_REGISTRATION_STEPS, FIDO2_AUTH_STEPS,
 } from "../../data/protocol-flows";
 import type { ProtocolFlowStep, ProtocolActor } from "../../types/security";
+import { apiPost, apiGet } from "../../api/client";
+import type { WebAuthnRegisterOptionsData, WebAuthnAuthOptionsData } from "../../types/auth-responses";
+import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
+import DataFlowPanel from "../shared/DataFlowPanel";
 import StepControl from "../shared/StepControl";
 import "./Fido2WebAuthn.css";
+
+const SCOPE = "fido2-webauthn";
+
+function Fido2Demo() {
+  const { t } = useI18n();
+  const ac = new AbortController();
+  onCleanup(() => ac.abort());
+
+  const [username, setUsername] = createSignal("");
+  const [result, setResult] = createSignal<{ ok: boolean; message: string } | null>(null);
+  const [loading, setLoading] = createSignal(false);
+  interface CredentialDisplay { username?: string; user?: string; credential_id?: string; credentialId?: string; id?: string; created_at?: string; createdAt?: string }
+  const [credentials, setCredentials] = createSignal<CredentialDisplay[]>([]);
+
+  async function fetchCredentials() {
+    const res = await apiGet<{ credentials: CredentialDisplay[] }>("/api/webauthn/credentials", SCOPE, ac.signal);
+    if (ac.signal.aborted) return;
+    if (res.data) setCredentials(res.data.credentials ?? []);
+  }
+
+  async function handleRegister() {
+    if (!username()) return;
+    setLoading(true);
+    setResult(null);
+
+    try {
+      // Step 1: Get registration options from server
+      const optRes = await apiPost<WebAuthnRegisterOptionsData>("/api/webauthn/register/options", { username: username() }, SCOPE, undefined, ac.signal);
+      if (ac.signal.aborted) return;
+      if (optRes.error) {
+        setResult({ ok: false, message: optRes.error });
+        setLoading(false);
+        return;
+      }
+
+      // Step 2: Create credential using browser WebAuthn API
+      const attestationResponse = await startRegistration({ optionsJSON: optRes.data!.options as Parameters<typeof startRegistration>[0]["optionsJSON"] });
+      if (ac.signal.aborted) return;
+
+      // Step 3: Verify with server
+      const verifyRes = await apiPost<Record<string, unknown>>("/api/webauthn/register/verify", {
+        username: username(),
+        response: attestationResponse,
+      }, SCOPE, undefined, ac.signal);
+      if (ac.signal.aborted) return;
+
+      if (verifyRes.error) {
+        setResult({ ok: false, message: verifyRes.error });
+      } else {
+        setResult({ ok: true, message: t("登録成功！", "Registration successful!") });
+        fetchCredentials();
+      }
+    } catch (err: unknown) {
+      if (ac.signal.aborted) return;
+      setResult({
+        ok: false,
+        message: (err instanceof Error ? err.message : null) || t("WebAuthn未対応のブラウザです", "WebAuthn not supported in this browser"),
+      });
+    }
+
+    setLoading(false);
+  }
+
+  async function handleAuthenticate() {
+    if (!username()) return;
+    setLoading(true);
+    setResult(null);
+
+    try {
+      // Step 1: Get authentication options from server
+      const optRes = await apiPost<WebAuthnAuthOptionsData>("/api/webauthn/auth/options", { username: username() }, SCOPE, undefined, ac.signal);
+      if (ac.signal.aborted) return;
+      if (optRes.error) {
+        setResult({ ok: false, message: optRes.error });
+        setLoading(false);
+        return;
+      }
+
+      // Step 2: Get assertion using browser WebAuthn API
+      const assertionResponse = await startAuthentication({ optionsJSON: optRes.data!.options as Parameters<typeof startAuthentication>[0]["optionsJSON"] });
+      if (ac.signal.aborted) return;
+
+      // Step 3: Verify with server
+      const verifyRes = await apiPost<Record<string, unknown>>("/api/webauthn/auth/verify", {
+        username: username(),
+        response: assertionResponse,
+      }, SCOPE, undefined, ac.signal);
+      if (ac.signal.aborted) return;
+
+      if (verifyRes.error) {
+        setResult({ ok: false, message: verifyRes.error });
+      } else {
+        setResult({ ok: true, message: t("認証成功！", "Authentication successful!") });
+      }
+    } catch (err: unknown) {
+      if (ac.signal.aborted) return;
+      setResult({
+        ok: false,
+        message: (err instanceof Error ? err.message : null) || t("WebAuthn未対応のブラウザです", "WebAuthn not supported in this browser"),
+      });
+    }
+
+    setLoading(false);
+  }
+
+  onMount(() => fetchCredentials());
+
+  return (
+    <div class="password-demo">
+      <h4 class="demo-title">
+        {t("WebAuthn デモ", "WebAuthn Demo")}
+        <span class="demo-badge">{t("実動作", "Live")}</span>
+      </h4>
+
+      <div class="demo-layout">
+        <div class="demo-form-area">
+          <form class="demo-form" onSubmit={(e) => e.preventDefault()}>
+            <div class="form-field">
+              <label class="form-label mono">{t("ユーザー名", "Username")}</label>
+              <input
+                type="text"
+                class="form-input"
+                value={username()}
+                onInput={(e) => setUsername(e.currentTarget.value)}
+                placeholder="alice"
+              />
+            </div>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                type="button"
+                class="demo-submit"
+                disabled={loading() || !username()}
+                onClick={handleRegister}
+              >
+                {loading() ? t("処理中...", "Processing...") : t("登録", "Register")}
+              </button>
+              <button
+                type="button"
+                class="demo-submit"
+                disabled={loading() || !username()}
+                onClick={handleAuthenticate}
+              >
+                {loading() ? t("処理中...", "Processing...") : t("認証", "Authenticate")}
+              </button>
+            </div>
+          </form>
+
+          <Show when={result()}>
+            <div
+              class="demo-result"
+              role="alert"
+              classList={{ success: result()!.ok, error: !result()!.ok }}
+            >
+              {result()!.ok ? "✓" : "✗"} {result()!.message}
+            </div>
+          </Show>
+        </div>
+
+        <div class="demo-db-area">
+          <div class="db-panel-title mono">
+            {t("credentials テーブル", "credentials table")}
+            <button class="db-refresh" onClick={fetchCredentials}>↻</button>
+          </div>
+          <Show when={credentials().length > 0} fallback={
+            <div class="db-empty">{t("クレデンシャルなし", "No credentials yet")}</div>
+          }>
+            <div class="db-table-wrap">
+              <table class="db-table">
+                <thead>
+                  <tr>
+                    <th>{t("ユーザー", "User")}</th>
+                    <th>{t("クレデンシャルID", "Credential ID")}</th>
+                    <th>{t("作成日時", "Created")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <For each={credentials()}>
+                    {(c) => (
+                      <tr>
+                        <td>{c.username || c.user}</td>
+                        <td class="db-hash-cell">
+                          <span class="hash-preview">{(c.credentialId || c.id || "").substring(0, 20)}...</span>
+                        </td>
+                        <td>{c.created_at || c.createdAt || "—"}</td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
+          </Show>
+        </div>
+      </div>
+
+      <DataFlowPanel scopeId={SCOPE} />
+    </div>
+  );
+}
 
 export default function Fido2WebAuthn() {
   const { t } = useI18n();
@@ -16,8 +218,8 @@ export default function Fido2WebAuthn() {
   const steps = () => ceremony() === "register" ? FIDO2_REGISTRATION_STEPS : FIDO2_AUTH_STEPS;
   const currentIdx = () => ceremony() === "register" ? regStep() : authStep();
   const setCurrentIdx = (v: number | ((p: number) => number)) => {
-    if (ceremony() === "register") setRegStep(v as any);
-    else setAuthStep(v as any);
+    if (ceremony() === "register") setRegStep(v as number | ((p: number) => number));
+    else setAuthStep(v as number | ((p: number) => number));
   };
   const step = () => steps()[currentIdx()];
 
@@ -27,6 +229,8 @@ export default function Fido2WebAuthn() {
 
   return (
     <div class="fido2-webauthn">
+      <Fido2Demo />
+
       <div class="fido2-toggle">
         <button
           class="fido2-mode-btn"

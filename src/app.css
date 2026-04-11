@@ -49,6 +49,8 @@
   --color-info-dim: rgba(22, 119, 255, 0.15);
   --color-info-light: rgba(22, 119, 255, 0.1);
   --color-info-strong: rgba(22, 119, 255, 0.4);
+  --color-accent-purple: #a855f7;
+  --color-accent-purple-dim: rgba(168, 85, 247, 0.15);
 }
 
 /* === Light Theme Override === */

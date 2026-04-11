@@ -1,8 +1,13 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createSignal, onCleanup } from "solid-js";
 import { useI18n } from "../../i18n/context";
 import { SSO_PATTERNS, IDP_TYPES, API_KEY_PATTERNS } from "../../data/sso-patterns";
 import type { SsoPattern, IdpInfo, ApiKeyPattern } from "../../types/security";
+import type { SsoLoginData, SsoAccessData, ApiKeyGenerateData, ApiKeyVerifyData } from "../../types/auth-responses";
+import { apiPost, apiGet } from "../../api/client";
+import DataFlowPanel from "../shared/DataFlowPanel";
 import "./SsoPatterns.css";
+
+const SCOPE = "sso-apikey";
 
 export default function SsoPatterns() {
   const { t } = useI18n();
@@ -58,7 +63,7 @@ export default function SsoPatterns() {
                   <div class="sso-flow-steps">
                     <span class="sso-flow-title mono">{t("フロー", "Flow")}</span>
                     <ol class="sso-flow-list">
-                      <For each={t(pattern.flowJa, pattern.flow) as unknown as string[]}>
+                      <For each={t(pattern.flowJa, pattern.flow)}>
                         {(step: string) => <li>{step}</li>}
                       </For>
                     </ol>
@@ -135,6 +140,364 @@ export default function SsoPatterns() {
             </For>
           </div>
         </div>
+      </Show>
+
+      {/* Interactive SSO Demo */}
+      <SsoDemo />
+
+      {/* Interactive API Key Demo */}
+      <ApiKeyDemo />
+    </div>
+  );
+}
+
+/* ── Interactive SSO Demo ── */
+function SsoDemo() {
+  const { t } = useI18n();
+  const ac = new AbortController();
+  onCleanup(() => ac.abort());
+
+  const [active, setActive] = createSignal(false);
+  const [username, setUsername] = createSignal("");
+  const [ssoToken, setSsoToken] = createSignal("");
+  const [loading, setLoading] = createSignal(false);
+  const [error, setError] = createSignal("");
+  const [loginResult, setLoginResult] = createSignal<SsoLoginData | null>(null);
+  const [serviceAResult, setServiceAResult] = createSignal<SsoAccessData | null>(null);
+  const [serviceBResult, setServiceBResult] = createSignal<SsoAccessData | null>(null);
+
+  async function handleLogin(e: Event) {
+    e.preventDefault();
+    if (!username()) return;
+    setLoading(true);
+    setError("");
+    setLoginResult(null);
+    setServiceAResult(null);
+    setServiceBResult(null);
+
+    const res = await apiPost<SsoLoginData>("/api/sso/login", { username: username() }, SCOPE, undefined, ac.signal);
+    if (ac.signal.aborted) return;
+    setLoading(false);
+
+    if (res.error) {
+      setError(res.error);
+    } else {
+      setLoginResult(res.data ?? null);
+      setSsoToken(res.data?.ssoToken || "");
+    }
+  }
+
+  async function accessService(serviceName: string) {
+    if (!ssoToken()) { setError(t("先にログインしてください", "Please login first")); return; }
+    setLoading(true);
+    setError("");
+
+    const res = await apiPost<SsoAccessData>("/api/sso/access-service", {
+      ssoToken: ssoToken(),
+      serviceName,
+    }, SCOPE, undefined, ac.signal);
+    if (ac.signal.aborted) return;
+    setLoading(false);
+
+    if (res.error) {
+      setError(res.error);
+    } else {
+      if (serviceName === "Service A") setServiceAResult(res.data ?? null);
+      else setServiceBResult(res.data ?? null);
+    }
+  }
+
+  return (
+    <div class="sso-live-section">
+      <Show when={!active()} fallback={
+        <div class="sso-live-panel">
+          <div class="live-header">
+            <h4 class="demo-title">
+              {t("SSO デモ", "SSO Demo")}
+              <span class="demo-badge">{t("実動作", "Live")}</span>
+            </h4>
+            <button class="demo-submit side-btn" onClick={() => setActive(false)}>
+              {t("閉じる", "Close")}
+            </button>
+          </div>
+
+          <form class="demo-form" onSubmit={handleLogin}>
+            <div class="form-field">
+              <label class="form-label mono">{t("ユーザー名", "Username")}</label>
+              <input
+                type="text"
+                class="form-input"
+                value={username()}
+                onInput={(e) => setUsername(e.currentTarget.value)}
+                placeholder="alice"
+              />
+            </div>
+            <button type="submit" class="demo-submit" disabled={loading() || !username()}>
+              {loading() ? t("処理中...", "Processing...") : t("SSO ログイン", "SSO Login")}
+            </button>
+          </form>
+
+          <Show when={error()}>
+            <div class="demo-result error">{error()}</div>
+          </Show>
+
+          <Show when={loginResult()}>
+            <div class="demo-result success">
+              {t("SSO ログイン成功！", "SSO Login Successful!")}
+            </div>
+            <div class="live-data-cards">
+              <div class="live-data-card">
+                <span class="ldc-label mono">SSO Token</span>
+                <span class="ldc-value mono">{ssoToken()?.substring(0, 40)}{ssoToken()?.length > 40 ? "..." : ""}</span>
+              </div>
+            </div>
+
+            <p class="sso-service-hint">
+              {t(
+                "SSOトークンで複数サービスに再認証なしでアクセスできます:",
+                "Access multiple services without re-authentication using the SSO token:"
+              )}
+            </p>
+
+            <div class="sso-service-buttons">
+              <button
+                class="demo-submit"
+                onClick={() => accessService("Service A")}
+                disabled={loading()}
+              >
+                {t("サービスAにアクセス", "Access Service A")}
+              </button>
+              <button
+                class="demo-submit"
+                onClick={() => accessService("Service B")}
+                disabled={loading()}
+              >
+                {t("サービスBにアクセス", "Access Service B")}
+              </button>
+            </div>
+
+            <div class="live-data-cards">
+              <Show when={serviceAResult()}>
+                <div class="live-data-card success-card">
+                  <span class="ldc-label mono">Service A</span>
+                  <span class="ldc-value mono">{JSON.stringify(serviceAResult(), null, 2)}</span>
+                </div>
+              </Show>
+              <Show when={serviceBResult()}>
+                <div class="live-data-card success-card">
+                  <span class="ldc-label mono">Service B</span>
+                  <span class="ldc-value mono">{JSON.stringify(serviceBResult(), null, 2)}</span>
+                </div>
+              </Show>
+            </div>
+          </Show>
+
+          <DataFlowPanel scopeId={SCOPE} defaultOpen={true} />
+        </div>
+      }>
+        <button class="demo-submit" onClick={() => setActive(true)}>
+          {t("SSO デモを開始", "Start SSO Demo")}
+        </button>
+      </Show>
+    </div>
+  );
+}
+
+/* ── Interactive API Key Demo ── */
+function ApiKeyDemo() {
+  const { t } = useI18n();
+  const ac = new AbortController();
+  onCleanup(() => ac.abort());
+
+  const [active, setActive] = createSignal(false);
+  const [keyName, setKeyName] = createSignal("my-app");
+  const [generatedKey, setGeneratedKey] = createSignal<ApiKeyGenerateData | null>(null);
+  const [keyShown, setKeyShown] = createSignal(false);
+  const [loading, setLoading] = createSignal(false);
+  const [error, setError] = createSignal("");
+  interface VerifyResult { ok: boolean; data?: ApiKeyVerifyData; error?: string }
+  const [headerResult, setHeaderResult] = createSignal<VerifyResult | null>(null);
+  const [queryResult, setQueryResult] = createSignal<VerifyResult | null>(null);
+  const [testMethod, setTestMethod] = createSignal<"header" | "query">("header");
+
+  async function generateKey() {
+    if (!keyName()) return;
+    setLoading(true);
+    setError("");
+    setGeneratedKey(null);
+    setKeyShown(false);
+    setHeaderResult(null);
+    setQueryResult(null);
+
+    const res = await apiPost<ApiKeyGenerateData>("/api/sso/apikey/generate", { name: keyName() }, SCOPE, undefined, ac.signal);
+    if (ac.signal.aborted) return;
+    setLoading(false);
+
+    if (res.error) {
+      setError(res.error);
+    } else {
+      setGeneratedKey(res.data ?? null);
+      setKeyShown(true);
+    }
+  }
+
+  async function verifyHeader() {
+    const key = generatedKey()?.rawKey || "";
+    if (!key) { setError(t("先にキーを生成してください", "Generate a key first")); return; }
+    setLoading(true);
+    setError("");
+
+    const res = await apiPost<ApiKeyVerifyData>(
+      "/api/sso/apikey/verify/header",
+      {},
+      SCOPE,
+      { "X-API-Key": key },
+      ac.signal
+    );
+    if (ac.signal.aborted) return;
+    setLoading(false);
+
+    if (res.error) {
+      setHeaderResult({ ok: false, error: res.error });
+    } else {
+      setHeaderResult({ ok: true, data: res.data });
+    }
+  }
+
+  async function verifyQuery() {
+    const key = generatedKey()?.rawKey || "";
+    if (!key) { setError(t("先にキーを生成してください", "Generate a key first")); return; }
+    setLoading(true);
+    setError("");
+
+    const res = await apiGet<ApiKeyVerifyData>(`/api/sso/apikey/verify/query?api_key=${encodeURIComponent(key)}`, SCOPE, ac.signal);
+    if (ac.signal.aborted) return;
+    setLoading(false);
+
+    if (res.error) {
+      setQueryResult({ ok: false, error: res.error });
+    } else {
+      setQueryResult({ ok: true, data: res.data });
+    }
+  }
+
+  return (
+    <div class="apikey-live-section">
+      <Show when={!active()} fallback={
+        <div class="apikey-live-panel">
+          <div class="live-header">
+            <h4 class="demo-title">
+              {t("API キーデモ", "API Key Demo")}
+              <span class="demo-badge">{t("実動作", "Live")}</span>
+            </h4>
+            <button class="demo-submit side-btn" onClick={() => setActive(false)}>
+              {t("閉じる", "Close")}
+            </button>
+          </div>
+
+          {/* Generate Key */}
+          <div class="demo-form">
+            <div class="form-field">
+              <label class="form-label mono">{t("キー名", "Key Name")}</label>
+              <input
+                type="text"
+                class="form-input"
+                value={keyName()}
+                onInput={(e) => setKeyName(e.currentTarget.value)}
+                placeholder="my-app"
+              />
+            </div>
+            <button class="demo-submit" onClick={generateKey} disabled={loading() || !keyName()}>
+              {loading() ? t("処理中...", "Processing...") : t("キーを生成", "Generate Key")}
+            </button>
+          </div>
+
+          <Show when={error()}>
+            <div class="demo-result error">{error()}</div>
+          </Show>
+
+          <Show when={generatedKey()}>
+            <div class="live-data-cards">
+              <div class="live-data-card">
+                <span class="ldc-label mono">API Key</span>
+                <Show when={keyShown()} fallback={
+                  <span class="ldc-value mono">{t("キーは生成時のみ表示されます", "Key shown only at generation time")}</span>
+                }>
+                  <span class="ldc-value mono">{generatedKey()?.rawKey}</span>
+                  <div class="demo-result" classList={{ error: true }}>
+                    {t(
+                      "このキーは再表示されません。安全に保管してください。",
+                      "This key will not be shown again. Store it securely."
+                    )}
+                  </div>
+                </Show>
+              </div>
+              <Show when={generatedKey()?.keyId}>
+                <div class="live-data-card">
+                  <span class="ldc-label mono">Key ID</span>
+                  <span class="ldc-value mono">{generatedKey()?.keyId}</span>
+                </div>
+              </Show>
+            </div>
+
+            {/* Test Panels */}
+            <div class="demo-mode-toggle">
+              <button
+                classList={{ active: testMethod() === "header" }}
+                onClick={() => setTestMethod("header")}
+              >
+                {t("ヘッダー方式", "Header Method")}
+              </button>
+              <button
+                classList={{ active: testMethod() === "query" }}
+                onClick={() => setTestMethod("query")}
+              >
+                {t("クエリ方式", "Query Method")}
+              </button>
+            </div>
+
+            <Show when={testMethod() === "header"}>
+              <div class="apikey-test-panel">
+                <p class="apikey-test-desc mono">
+                  POST /api/sso/apikey/verify/header<br />
+                  X-API-Key: {(generatedKey()?.rawKey || "").substring(0, 20)}...
+                </p>
+                <button class="demo-submit" onClick={verifyHeader} disabled={loading()}>
+                  {t("ヘッダーで検証", "Verify with Header")}
+                </button>
+                <Show when={headerResult()}>
+                  <div class="demo-result" classList={{ success: headerResult()?.ok, error: !headerResult()?.ok }}>
+                    {headerResult()?.ok ? "OK" : "FAIL"} {JSON.stringify(headerResult()?.data || headerResult()?.error)}
+                  </div>
+                </Show>
+              </div>
+            </Show>
+
+            <Show when={testMethod() === "query"}>
+              <div class="apikey-test-panel">
+                <p class="apikey-test-desc mono">
+                  GET /api/sso/apikey/verify/query?api_key={
+                    (generatedKey()?.rawKey || "").substring(0, 20)
+                  }...
+                </p>
+                <button class="demo-submit" onClick={verifyQuery} disabled={loading()}>
+                  {t("クエリで検証", "Verify with Query")}
+                </button>
+                <Show when={queryResult()}>
+                  <div class="demo-result" classList={{ success: queryResult()?.ok, error: !queryResult()?.ok }}>
+                    {queryResult()?.ok ? "OK" : "FAIL"} {JSON.stringify(queryResult()?.data || queryResult()?.error)}
+                  </div>
+                </Show>
+              </div>
+            </Show>
+          </Show>
+
+          <DataFlowPanel scopeId={SCOPE} defaultOpen={true} />
+        </div>
+      }>
+        <button class="demo-submit" onClick={() => setActive(true)}>
+          {t("API キーデモを開始", "Start API Key Demo")}
+        </button>
       </Show>
     </div>
   );

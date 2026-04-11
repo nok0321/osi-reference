@@ -233,4 +233,122 @@
     grid-template-columns: 80px 1fr 1fr;
     font-size: 0.6rem;
   }
+  .oidc-saml-comp-grid { grid-template-columns: 1fr; }
+  .oidc-timeline { flex-wrap: wrap; }
+}
+
+/* ── Interactive Demo Section ── */
+.os-demo-section {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.os-demo-steps {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
+.os-demo-step-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.65rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  transition: all var(--transition-fast);
+}
+
+.os-demo-step-indicator.done {
+  border-color: rgba(74, 222, 128, 0.4);
+  background: rgba(74, 222, 128, 0.08);
+  color: #4ade80;
+}
+
+.os-demo-step-indicator.active {
+  border-color: var(--glow-color);
+  background: var(--glow-color-dim);
+  color: var(--glow-color);
+  animation: stepPulse 1s ease infinite;
+}
+
+.os-demo-step-indicator.pending {
+  opacity: 0.4;
+}
+
+.os-demo-step-num {
+  font-size: 0.55rem;
+  font-weight: 700;
+}
+
+.os-demo-step-label {
+  font-size: 0.6rem;
+}
+
+@keyframes stepPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.os-demo-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem;
+  animation: detailFade 0.3s ease;
+}
+
+.os-demo-card.highlight {
+  border-color: var(--glow-color-dim);
+  background: color-mix(in srgb, var(--glow-color) 5%, var(--bg-secondary));
+}
+
+.os-demo-card-title {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.35rem;
+}
+
+.os-demo-kv {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 0.3rem;
+}
+
+.os-demo-k {
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: var(--trace-color);
+}
+
+.os-demo-v {
+  font-size: 0.6rem;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.os-demo-pre {
+  font-size: 0.6rem;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
 }

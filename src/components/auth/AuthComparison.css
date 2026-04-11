@@ -193,3 +193,191 @@
     margin-left: 0;
   }
 }
+
+/* ── Live Comparison Demo ── */
+.live-comparison {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+}
+.comp-login-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.comp-login-row .form-input {
+  flex: 1;
+  padding: 0.4rem 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  outline: none;
+}
+.comp-login-row .form-input:focus { border-color: var(--glow-color); }
+.live-comp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+@media (max-width: 700px) { .live-comp-grid { grid-template-columns: 1fr; } }
+.live-comp-side {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+}
+.session-side { border-top: 3px solid var(--color-success); }
+.token-side { border-top: 3px solid var(--color-accent-purple); }
+.side-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.session-side .side-label { color: var(--color-success); }
+.token-side .side-label { color: var(--color-accent-purple); }
+.side-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.5rem;
+}
+.side-actions .demo-submit {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.7rem;
+}
+.live-comp-grid .side-btn {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+}
+.live-comp-grid .side-btn:hover { border-color: var(--glow-color); }
+.live-comp-grid .side-btn-danger {
+  background: var(--color-danger);
+}
+.token-preview {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  padding: 0.3rem 0.5rem;
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+  margin-bottom: 0.4rem;
+  word-break: break-all;
+}
+.token-label { color: var(--color-accent-purple); font-weight: 600; }
+
+/* ── Step progress ── */
+.comp-step-progress {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+.comp-progress-step {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.72rem;
+  opacity: 0.5;
+  transition: all var(--transition-fast);
+}
+.comp-progress-step.current {
+  opacity: 1;
+  border-color: var(--glow-color);
+  background: var(--glow-color-dim);
+}
+.comp-progress-step.completed {
+  opacity: 0.75;
+  border-color: var(--color-success);
+}
+.comp-progress-num {
+  font-weight: 700;
+  font-size: 0.65rem;
+  width: 1.2rem;
+  height: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+}
+.comp-progress-step.current .comp-progress-num {
+  border-color: var(--glow-color);
+  color: var(--glow-color);
+}
+.comp-progress-step.completed .comp-progress-num {
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+/* ── Guide panel ── */
+.comp-guide {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--glow-color);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.75rem;
+}
+.comp-guide-desc {
+  font-size: 0.78rem;
+  margin: 0 0 0.5rem;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+.comp-guide-points {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+@media (max-width: 600px) { .comp-guide-points { grid-template-columns: 1fr; } }
+.comp-guide-point {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.4rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+}
+.session-point { border-left: 2px solid var(--color-success); }
+.token-point { border-left: 2px solid var(--color-accent-purple); }
+.cgp-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.session-point .cgp-label { color: var(--color-success); }
+.token-point .cgp-label { color: var(--color-accent-purple); }
+.cgp-text {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* ── Auth status badge ── */
+.auth-status {
+  font-size: 0.6rem;
+  margin-left: 0.5rem;
+  font-weight: 400;
+}
+.auth-status.logged-in { color: var(--color-success); }
+.auth-status.logged-out { color: var(--text-muted); }
+
+/* ── Action row ── */
+.comp-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: center;
+}
+.comp-actions .demo-submit {
+  min-width: 200px;
+}
