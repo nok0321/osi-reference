@@ -9,7 +9,9 @@ beforeEach(() => {
   ({ app } = createTestApp());
 });
 
-async function registerUser(username: string, password = "pass123") {
+const TEST_PW = "test-mfa-pw";
+
+async function registerUser(username: string, password = TEST_PW) {
   const res = await post(app, "/api/auth/password/register", { username, password });
   expect(res.status).toBe(200);
 }
@@ -71,7 +73,7 @@ describe("POST /api/mfa/totp/login/step1 (regression: LOGIN_CHALLENGE_TTL_MS)", 
     // Step 1 — this path exercised LOGIN_CHALLENGE_TTL_MS and challenge.createdAt
     const step1 = await post(app, "/api/mfa/totp/login/step1", {
       username: "mfa-user",
-      password: "pass123",
+      password: TEST_PW,
     });
     expect(step1.status).toBe(200);
     expect(step1.json.data.requiresMfa).toBe(true);
@@ -92,7 +94,7 @@ describe("POST /api/mfa/totp/login/step1 (regression: LOGIN_CHALLENGE_TTL_MS)", 
     await registerUser("no-mfa-user");
     const res = await post(app, "/api/mfa/totp/login/step1", {
       username: "no-mfa-user",
-      password: "pass123",
+      password: TEST_PW,
     });
     expect(res.status).toBe(200);
     expect(res.json.data.requiresMfa).toBe(false);
@@ -124,7 +126,7 @@ describe("POST /api/mfa/totp/login/step2", () => {
     await enrollMfa("u2");
     const step1 = await post(app, "/api/mfa/totp/login/step1", {
       username: "u2",
-      password: "pass123",
+      password: TEST_PW,
     });
     const res = await post(app, "/api/mfa/totp/login/step2", {
       challengeId: step1.json.data.challengeId,
@@ -138,7 +140,7 @@ describe("POST /api/mfa/totp/login/step2", () => {
     const secret = await enrollMfa("u3");
     const step1 = await post(app, "/api/mfa/totp/login/step1", {
       username: "u3",
-      password: "pass123",
+      password: TEST_PW,
     });
     const code = computeTotp(secret, currentCounter()).code;
     const first = await post(app, "/api/mfa/totp/login/step2", {
