@@ -424,7 +424,7 @@ function ApiKeyDemo() {
                   <span class="ldc-value mono">{t("キーは生成時のみ表示されます", "Key shown only at generation time")}</span>
                 }>
                   <span class="ldc-value mono">{generatedKey()?.rawKey}</span>
-                  <div class="demo-result" classList={{ error: true }}>
+                  <div class="demo-result" role="alert" classList={{ error: true }}>
                     {t(
                       "このキーは再表示されません。安全に保管してください。",
                       "This key will not be shown again. Store it securely."
@@ -466,7 +466,7 @@ function ApiKeyDemo() {
                   {t("ヘッダーで検証", "Verify with Header")}
                 </button>
                 <Show when={headerResult()}>
-                  <div class="demo-result" classList={{ success: headerResult()?.ok, error: !headerResult()?.ok }}>
+                  <div class="demo-result" role="alert" classList={{ success: headerResult()?.ok, error: !headerResult()?.ok }}>
                     {headerResult()?.ok ? "OK" : "FAIL"} {JSON.stringify(headerResult()?.data || headerResult()?.error)}
                   </div>
                 </Show>
@@ -484,7 +484,7 @@ function ApiKeyDemo() {
                   {t("クエリで検証", "Verify with Query")}
                 </button>
                 <Show when={queryResult()}>
-                  <div class="demo-result" classList={{ success: queryResult()?.ok, error: !queryResult()?.ok }}>
+                  <div class="demo-result" role="alert" classList={{ success: queryResult()?.ok, error: !queryResult()?.ok }}>
                     {queryResult()?.ok ? "OK" : "FAIL"} {JSON.stringify(queryResult()?.data || queryResult()?.error)}
                   </div>
                 </Show>

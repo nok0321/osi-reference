@@ -6,6 +6,7 @@ import {
   verifyAuthenticationResponse,
 } from "@simplewebauthn/server";
 import type { RegistrationResponseJSON, AuthenticationResponseJSON } from "@simplewebauthn/server";
+import { v4 as uuidv4 } from "uuid";
 import { getDb } from "../db/schema.js";
 import { parseBody, webauthnUsernameSchema, webauthnRegisterVerifySchema, webauthnAuthVerifySchema } from "../validation.js";
 import type { UserRow, WebAuthnCredentialRow } from "../../shared/api-types.js";
@@ -17,8 +18,8 @@ const RP_NAME = "OSI Reference Demo";
 const RP_ID = "localhost";
 const ORIGIN = "http://localhost:3000";
 
-// In-memory challenge store (keyed by username) with 5-minute TTL
-const challenges = createTtlStore<string>({ ttlMs: 5 * 60 * 1000 });
+// In-memory challenge store (keyed by sessionId to prevent concurrent-tab overwrites)
+const challenges = createTtlStore<{ challenge: string; username: string }>({ ttlMs: 5 * 60 * 1000 });
 
 webauthnRoutes.post("/register/options", async (c) => {
   const parsed = await parseBody(c, webauthnUsernameSchema);
@@ -64,7 +65,8 @@ webauthnRoutes.post("/register/options", async (c) => {
     },
   });
 
-  challenges.set(username, options.challenge);
+  const sessionId = uuidv4();
+  challenges.set(sessionId, { challenge: options.challenge, username });
 
   trace.addCryptoOp({
     op: "generateChallenge",
@@ -76,12 +78,13 @@ webauthnRoutes.post("/register/options", async (c) => {
 
   trace.addSessionOp({
     action: "STORE_CHALLENGE",
-    data: { username, challenge: options.challenge, purpose: "registration" },
+    data: { sessionId, username, challenge: options.challenge, purpose: "registration" },
   });
 
   return c.json({
     success: true,
     data: {
+      sessionId,
       options,
       explanation: {
         challenge: "Random bytes from server — authenticator must sign this",
@@ -95,20 +98,20 @@ webauthnRoutes.post("/register/options", async (c) => {
 webauthnRoutes.post("/register/verify", async (c) => {
   const parsed = await parseBody(c, webauthnRegisterVerifySchema);
   if ("error" in parsed) return parsed.error;
-  const { username, response: attResponseRaw } = parsed.data;
+  const { sessionId, username, response: attResponseRaw } = parsed.data;
   const attResponse = attResponseRaw as unknown as RegistrationResponseJSON;
   const trace = c.get("trace");
   const db = getDb();
 
-  const expectedChallenge = challenges.get(username);
-  if (!expectedChallenge) {
+  const stored = challenges.get(sessionId);
+  if (!stored || stored.username !== username) {
     return c.json({ success: false, error: "No challenge found or challenge expired — start registration first" }, 400);
   }
 
   try {
     const verification = await verifyRegistrationResponse({
       response: attResponse,
-      expectedChallenge,
+      expectedChallenge: stored.challenge,
       expectedOrigin: ORIGIN,
       expectedRPID: RP_ID,
     });
@@ -144,7 +147,7 @@ webauthnRoutes.post("/register/verify", async (c) => {
         ms: 0,
       });
 
-      challenges.delete(username);
+      challenges.delete(sessionId);
 
       return c.json({
         success: true,
@@ -193,7 +196,8 @@ webauthnRoutes.post("/auth/options", async (c) => {
     userVerification: "preferred",
   });
 
-  challenges.set(username, options.challenge);
+  const sessionId = uuidv4();
+  challenges.set(sessionId, { challenge: options.challenge, username });
 
   trace.addCryptoOp({
     op: "generateAuthChallenge",
@@ -206,6 +210,7 @@ webauthnRoutes.post("/auth/options", async (c) => {
   return c.json({
     success: true,
     data: {
+      sessionId,
       options,
       explanation: {
         challenge: "Fresh random bytes — authenticator signs with private key",
@@ -218,13 +223,13 @@ webauthnRoutes.post("/auth/options", async (c) => {
 webauthnRoutes.post("/auth/verify", async (c) => {
   const parsed = await parseBody(c, webauthnAuthVerifySchema);
   if ("error" in parsed) return parsed.error;
-  const { username, response: authResponseRaw } = parsed.data;
+  const { sessionId, username, response: authResponseRaw } = parsed.data;
   const authResponse = authResponseRaw as unknown as AuthenticationResponseJSON;
   const trace = c.get("trace");
   const db = getDb();
 
-  const expectedChallenge = challenges.get(username);
-  if (!expectedChallenge) {
+  const stored = challenges.get(sessionId);
+  if (!stored || stored.username !== username) {
     return c.json({ success: false, error: "No challenge found or challenge expired" }, 400);
   }
 
@@ -244,7 +249,7 @@ webauthnRoutes.post("/auth/verify", async (c) => {
   try {
     const verification = await verifyAuthenticationResponse({
       response: authResponse,
-      expectedChallenge,
+      expectedChallenge: stored.challenge,
       expectedOrigin: ORIGIN,
       expectedRPID: RP_ID,
       credential: {
@@ -285,7 +290,7 @@ webauthnRoutes.post("/auth/verify", async (c) => {
         newCounter,
         cred.credential_id
       );
-      challenges.delete(username);
+      challenges.delete(sessionId);
 
       return c.json({
         success: true,

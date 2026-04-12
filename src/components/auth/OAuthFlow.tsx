@@ -169,7 +169,10 @@ export default function OAuthFlow() {
                   past: isPast(),
                   future: !isCurrent() && !isPast(),
                 }}
+                role="button"
+                tabindex="0"
                 onClick={() => setOauthStep(i())}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOauthStep(i()); } }}
               >
                 {/* Step number */}
                 <div class="swim-step-num mono">{step.stepNumber}</div>

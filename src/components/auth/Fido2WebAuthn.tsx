@@ -49,8 +49,9 @@ function Fido2Demo() {
       const attestationResponse = await startRegistration({ optionsJSON: optRes.data!.options as Parameters<typeof startRegistration>[0]["optionsJSON"] });
       if (ac.signal.aborted) return;
 
-      // Step 3: Verify with server
+      // Step 3: Verify with server (sessionId prevents concurrent-tab challenge overwrite)
       const verifyRes = await apiPost<Record<string, unknown>>("/api/webauthn/register/verify", {
+        sessionId: optRes.data!.sessionId,
         username: username(),
         response: attestationResponse,
       }, SCOPE, undefined, ac.signal);
@@ -92,8 +93,9 @@ function Fido2Demo() {
       const assertionResponse = await startAuthentication({ optionsJSON: optRes.data!.options as Parameters<typeof startAuthentication>[0]["optionsJSON"] });
       if (ac.signal.aborted) return;
 
-      // Step 3: Verify with server
+      // Step 3: Verify with server (sessionId prevents concurrent-tab challenge overwrite)
       const verifyRes = await apiPost<Record<string, unknown>>("/api/webauthn/auth/verify", {
+        sessionId: optRes.data!.sessionId,
         username: username(),
         response: assertionResponse,
       }, SCOPE, undefined, ac.signal);
@@ -310,7 +312,10 @@ export default function Fido2WebAuthn() {
             <div
               class="fido2-tl-item"
               classList={{ active: i() === currentIdx(), past: i() < currentIdx() }}
+              role="button"
+              tabindex="0"
               onClick={() => setCurrentIdx(i())}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCurrentIdx(i()); } }}
             >
               <span class="fido2-tl-num mono">{s.stepNumber}</span>
               <span class="fido2-tl-label">{t(s.actionJa, s.action)}</span>

@@ -386,6 +386,7 @@ export interface ApiKeyVerifyData {
 
 /** POST /api/webauthn/register/options */
 export interface WebAuthnRegisterOptionsData {
+  sessionId: string;
   options: unknown; // PublicKeyCredentialCreationOptionsJSON from @simplewebauthn/server
   explanation: {
     challenge: string;
@@ -404,6 +405,7 @@ export interface WebAuthnRegisterVerifyData {
 
 /** POST /api/webauthn/auth/options */
 export interface WebAuthnAuthOptionsData {
+  sessionId: string;
   options: unknown; // PublicKeyCredentialRequestOptionsJSON from @simplewebauthn/server
   explanation: {
     challenge: string;

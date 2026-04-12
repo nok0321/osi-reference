@@ -21,26 +21,27 @@ export default function DataFlowPanel(props: DataFlowPanelProps) {
       <button
         class="data-flow-toggle"
         data-open={open()}
+        aria-expanded={open()}
         onClick={() => setOpen(!open())}
       >
-        <span>{t("Server Data Flow", "Server Data Flow")} ({exs().length})</span>
-        <span class="toggle-icon">{open() ? "▾" : "▸"}</span>
+        <span>{t("サーバーデータフロー", "Server Data Flow")} ({exs().length})</span>
+        <span class="toggle-icon" aria-hidden="true">{open() ? "▾" : "▸"}</span>
       </button>
 
       <Show when={open()}>
-        <div class="data-flow-tabs">
-          <button class="data-flow-tab" data-active={tab() === "http"} onClick={() => setTab("http")}>
+        <div class="data-flow-tabs" role="tablist">
+          <button class="data-flow-tab" role="tab" aria-selected={tab() === "http"} data-active={tab() === "http"} onClick={() => setTab("http")}>
             HTTP
           </button>
-          <button class="data-flow-tab" data-active={tab() === "trace"} onClick={() => setTab("trace")}>
+          <button class="data-flow-tab" role="tab" aria-selected={tab() === "trace"} data-active={tab() === "trace"} onClick={() => setTab("trace")}>
             {t("サーバー処理", "Server Trace")}
           </button>
-          <button class="data-flow-tab" data-active={tab() === "db"} onClick={() => setTab("db")}>
+          <button class="data-flow-tab" role="tab" aria-selected={tab() === "db"} data-active={tab() === "db"} onClick={() => setTab("db")}>
             {t("DB操作", "DB Queries")}
           </button>
         </div>
 
-        <div class="data-flow-content">
+        <div class="data-flow-content" role="tabpanel" aria-live="polite">
           <Show when={tab() === "http"}>
             <HttpInspectorView exchanges={exs()} />
           </Show>
@@ -72,7 +73,11 @@ function HttpInspectorView(props: { exchanges: CapturedExchange[] }) {
             <div class="http-exchange">
               <div
                 class="http-exchange-header"
+                role="button"
+                tabindex="0"
+                aria-expanded={expandedId() === ex.id}
                 onClick={() => setExpandedId(expandedId() === ex.id ? null : ex.id)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpandedId(expandedId() === ex.id ? null : ex.id); } }}
               >
                 <span class="http-method" data-method={ex.request.method}>{ex.request.method}</span>
                 <span class="http-url">{ex.request.url}</span>

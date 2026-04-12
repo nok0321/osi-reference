@@ -159,6 +159,7 @@ function JwtWorkshop() {
             <Show when={verifyResult()}>
               <div
                 class="demo-result"
+                role="alert"
                 classList={{ success: verifyResult()!.valid, error: !verifyResult()!.valid }}
               >
                 {verifyResult()!.valid ? "✓ VALID" : `✗ INVALID — ${verifyResult()!.error}`}

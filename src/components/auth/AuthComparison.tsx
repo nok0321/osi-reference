@@ -314,7 +314,11 @@ export default function AuthComparison() {
             <div
               class="comp-row"
               classList={{ expanded: expandedRow() === i() }}
+              role="button"
+              tabindex="0"
+              aria-expanded={expandedRow() === i()}
               onClick={() => toggleRow(i())}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleRow(i()); } }}
             >
               <div class="comp-row-main">
                 <span class="cr-aspect">{t(item.aspectJa, item.aspect)}</span>

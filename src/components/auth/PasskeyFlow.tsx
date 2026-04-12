@@ -430,7 +430,10 @@ export default function PasskeyFlow() {
             <div
               class="fido2-tl-item"
               classList={{ active: i() === currentIdx(), past: i() < currentIdx() }}
+              role="button"
+              tabindex="0"
               onClick={() => setCurrentIdx(i())}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCurrentIdx(i()); } }}
             >
               <span class="fido2-tl-num mono">{s.stepNumber}</span>
               <span class="fido2-tl-label">{t(s.actionJa, s.action)}</span>

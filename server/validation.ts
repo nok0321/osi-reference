@@ -87,10 +87,12 @@ export const roleAssignSchema = z.object({
 // ── WebAuthn ──
 export const webauthnUsernameSchema = z.object({ username: z.string().min(1).max(64) });
 export const webauthnRegisterVerifySchema = z.object({
+  sessionId: z.string().uuid(),
   username: z.string().min(1).max(64),
   response: z.record(z.string(), z.unknown()),
 });
 export const webauthnAuthVerifySchema = z.object({
+  sessionId: z.string().uuid(),
   username: z.string().min(1).max(64),
   response: z.record(z.string(), z.unknown()),
 });

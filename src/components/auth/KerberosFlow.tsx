@@ -80,7 +80,10 @@ export default function KerberosFlow() {
             <div
               class="kerb-tl-item"
               classList={{ active: i() === stepIdx(), past: i() < stepIdx() }}
+              role="button"
+              tabindex="0"
               onClick={() => setStepIdx(i())}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setStepIdx(i()); } }}
             >
               <span class="kerb-tl-num mono">{s.stepNumber}</span>
               <span class="kerb-tl-label">{t(s.actionJa, s.action)}</span>
@@ -118,10 +121,13 @@ export default function KerberosFlow() {
                               ? getActorColor(s.from)
                               : getActorColor(s.to),
                           }}
+                          role="button"
+                          tabindex="0"
                           onClick={() => setStepIdx(i())}
+                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setStepIdx(i()); } }}
                         >
                           <span class="kerb-ev-num mono">{s.stepNumber}</span>
-                          <span class="kerb-ev-dir">{s.from === actor.id ? "→" : "←"}</span>
+                          <span class="kerb-ev-dir" aria-hidden="true">{s.from === actor.id ? "→" : "←"}</span>
                         </div>
                       </Show>
                     )}

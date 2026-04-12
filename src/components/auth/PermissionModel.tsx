@@ -232,6 +232,7 @@ function AccessCheckDemo(props: { mode: () => "rbac" | "abac" | "acl" | "policy"
               <Show when={assignResult()}>
                 <div
                   class="demo-result"
+                  role="alert"
                   classList={{ success: assignResult()!.ok, error: !assignResult()!.ok }}
                 >
                   {assignResult()!.ok ? "✓" : "✗"} {assignResult()!.message}

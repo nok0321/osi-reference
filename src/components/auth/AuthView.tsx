@@ -45,7 +45,7 @@ function AuthErrorFallback(props: { error: Error; reset: () => void }) {
   return (
     <div class="auth-error-fallback">
       <h3>Something went wrong</h3>
-      <pre class="mono" style={{ "white-space": "pre-wrap", "word-break": "break-all", color: "var(--color-error)" }}>
+      <pre class="mono" style={{ "white-space": "pre-wrap", "word-break": "break-all", color: "var(--color-danger)" }}>
         {props.error.message}
       </pre>
       <button class="subtab" onClick={() => props.reset()} style={{ "margin-top": "1rem" }}>
