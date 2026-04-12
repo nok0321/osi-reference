@@ -28,7 +28,7 @@ passwordAuthRoutes.post("/register", async (c) => {
   }
 
   // Generate salt
-  const salt = bcrypt.genSaltSync(10);
+  const salt = await bcrypt.genSalt(10);
   trace.addCryptoOp({
     op: "bcrypt.genSalt",
     input: `rounds=10`,
@@ -38,7 +38,7 @@ passwordAuthRoutes.post("/register", async (c) => {
   });
 
   // Hash password
-  const hash = bcrypt.hashSync(password, salt);
+  const hash = await bcrypt.hash(password, salt);
   trace.addCryptoOp({
     op: "bcrypt.hash",
     input: `password="[REDACTED]" + salt="${salt}"`,
@@ -90,7 +90,7 @@ passwordAuthRoutes.post("/login", async (c) => {
   }
 
   // Compare password
-  const match = bcrypt.compareSync(password, user.password_hash);
+  const match = await bcrypt.compare(password, user.password_hash);
   trace.addCryptoOp({
     op: "bcrypt.compare",
     input: `password="[REDACTED]" vs stored_hash="${user.password_hash.substring(0, 20)}..."`,

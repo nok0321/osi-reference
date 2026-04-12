@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import { getDb } from "../db/schema.js";
 import bcrypt from "bcryptjs";
 import { parseBody, oidcAuthorizeSchema, oidcTokenSchema, samlSsoSchema } from "../validation.js";
-import type { UserRow } from "../../shared/api-types.js";
+import type { UserRow, OAuthClientRow } from "../../shared/api-types.js";
 import { createTtlStore } from "../utils/ttl-store.js";
 
 export const oidcSamlSimRoutes = new Hono();
@@ -46,8 +46,23 @@ oidcSamlSimRoutes.post("/authorize", async (c) => {
   const trace = c.get("trace");
   const db = getDb();
 
+  // Verify client and redirect_uri against registered client (reuse oauth_clients table)
+  const client = db
+    .prepare("SELECT client_id, client_secret, name, redirect_uris FROM oauth_clients WHERE client_id = ?")
+    .get(client_id) as OAuthClientRow | undefined;
+  if (!client) {
+    return c.json({ success: false, error: "Unknown client_id" }, 400);
+  }
+  const registeredUris: string[] = JSON.parse(client.redirect_uris || "[]");
+  if (!registeredUris.includes(redirect_uri)) {
+    return c.json(
+      { success: false, error: `Invalid redirect_uri. Registered: ${registeredUris.join(", ")}` },
+      400
+    );
+  }
+
   const user = db.prepare("SELECT id, username, password_hash FROM users WHERE username = ?").get(username) as UserRow | undefined;
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  if (!user || !(await bcrypt.compare(password, user.password_hash))) {
     return c.json({ success: false, error: "Invalid credentials" }, 401);
   }
 
@@ -104,14 +119,19 @@ oidcSamlSimRoutes.post("/token", async (c) => {
     } else {
       computedChallenge = code_verifier;
     }
+    const computedBuf = Buffer.from(computedChallenge, "utf8");
+    const storedBuf = Buffer.from(codeData.codeChallenge, "utf8");
+    const pkceValid =
+      computedBuf.length === storedBuf.length &&
+      crypto.timingSafeEqual(computedBuf, storedBuf);
     trace.addCryptoOp({
       op: "PKCE verify",
       input: `code_verifier="${code_verifier.substring(0, 20)}..."`,
-      output: computedChallenge === codeData.codeChallenge ? "MATCH ✓" : "MISMATCH ✗",
+      output: pkceValid ? "MATCH ✓" : "MISMATCH ✗",
       algo: codeData.codeChallengeMethod || "plain",
-      detail: `SHA256(code_verifier) vs stored code_challenge`,
+      detail: `SHA256(code_verifier) vs stored code_challenge (constant-time compare)`,
     });
-    if (computedChallenge !== codeData.codeChallenge) {
+    if (!pkceValid) {
       return c.json({ success: false, error: "PKCE verification failed" }, 400);
     }
   }
@@ -222,7 +242,7 @@ oidcSamlSimRoutes.post("/saml/sso", async (c) => {
   const db = getDb();
 
   const user = db.prepare("SELECT id, username, password_hash FROM users WHERE username = ?").get(username) as UserRow | undefined;
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  if (!user || !(await bcrypt.compare(password, user.password_hash))) {
     return c.json({ success: false, error: "Invalid credentials" }, 401);
   }
 

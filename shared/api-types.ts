@@ -171,6 +171,14 @@ export interface OAuthTokenRow {
   expires_at: string;
 }
 
+export interface RefreshTokenRow {
+  jti: string;
+  user_id: number;
+  expires_at: string;
+  revoked: number;
+  created_at: string;
+}
+
 export interface SessionRow {
   id: string;
   user_id: number;
