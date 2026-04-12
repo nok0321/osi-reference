@@ -16,9 +16,9 @@ sessionAuthRoutes.post("/login", async (c) => {
   const db = getDb();
 
   const t0 = performance.now();
-  const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as UserRow | undefined;
+  const user = db.prepare("SELECT id, username, password_hash FROM users WHERE username = ?").get(username) as UserRow | undefined;
   trace.addDbQuery({
-    sql: "SELECT * FROM users WHERE username = ?",
+    sql: "SELECT id, username, password_hash FROM users WHERE username = ?",
     params: [username],
     rows: user ? [{ id: user.id, username: user.username }] : [],
     ms: performance.now() - t0,

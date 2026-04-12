@@ -14,45 +14,19 @@ import {
   passkeyAuthVerifySchema,
 } from "../validation.js";
 import type { UserRow, WebAuthnCredentialRow } from "../../shared/api-types.js";
+import { createTtlStore } from "../utils/ttl-store.js";
 
 export const passkeyRoutes = new Hono();
 
 const RP_NAME = "OSI Reference Demo";
 const RP_ID = "localhost";
 const ORIGIN = "http://localhost:3000";
-const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
 // ── Challenge stores ──
 // Registration: keyed by username (same as existing webauthn.ts)
-interface StoredChallenge {
-  challenge: string;
-  createdAt: number;
-}
-const registerChallenges = new Map<string, StoredChallenge>();
+const registerChallenges = createTtlStore<string>({ ttlMs: 5 * 60 * 1000 });
 // Usernameless auth: keyed by sessionId (uuid)
-const authChallenges = new Map<string, StoredChallenge>();
-
-function getChallenge(map: Map<string, StoredChallenge>, key: string): string | undefined {
-  const stored = map.get(key);
-  if (!stored) return undefined;
-  if (Date.now() - stored.createdAt > CHALLENGE_TTL_MS) {
-    map.delete(key);
-    return undefined;
-  }
-  return stored.challenge;
-}
-
-function setChallenge(map: Map<string, StoredChallenge>, key: string, challenge: string) {
-  cleanMap(map);
-  map.set(key, { challenge, createdAt: Date.now() });
-}
-
-function cleanMap(map: Map<string, StoredChallenge>) {
-  const now = Date.now();
-  for (const [k, v] of map) {
-    if (now - v.createdAt > CHALLENGE_TTL_MS) map.delete(k);
-  }
-}
+const authChallenges = createTtlStore<string>({ ttlMs: 5 * 60 * 1000 });
 
 // ── POST /register/options ──
 passkeyRoutes.post("/register/options", async (c) => {
@@ -103,7 +77,7 @@ passkeyRoutes.post("/register/options", async (c) => {
     },
   });
 
-  setChallenge(registerChallenges, username, options.challenge);
+  registerChallenges.set(username, options.challenge);
 
   trace.addCryptoOp({
     op: "generateChallenge",
@@ -155,7 +129,7 @@ passkeyRoutes.post("/register/verify", async (c) => {
   const trace = c.get("trace");
   const db = getDb();
 
-  const expectedChallenge = getChallenge(registerChallenges, username);
+  const expectedChallenge = registerChallenges.get(username);
   if (!expectedChallenge) {
     return c.json(
       { success: false, error: "No challenge found or challenge expired — restart registration" },
@@ -252,7 +226,7 @@ passkeyRoutes.post("/auth/options", async (c) => {
     userVerification: "required",
   });
 
-  setChallenge(authChallenges, sessionId, options.challenge);
+  authChallenges.set(sessionId, options.challenge);
 
   trace.addCryptoOp({
     op: "generateAuthChallenge",
@@ -295,7 +269,7 @@ passkeyRoutes.post("/auth/verify", async (c) => {
   const trace = c.get("trace");
   const db = getDb();
 
-  const expectedChallenge = getChallenge(authChallenges, sessionId);
+  const expectedChallenge = authChallenges.get(sessionId);
   if (!expectedChallenge) {
     return c.json(
       { success: false, error: "Session expired or invalid — restart auth" },

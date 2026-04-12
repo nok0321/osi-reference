@@ -5,29 +5,17 @@ import { getDb } from "../db/schema.js";
 import { parseBody, ssoLoginSchema, ssoAccessServiceSchema, apikeyGenerateSchema, apikeyHmacSchema } from "../validation.js";
 import type { UserRow, ApiKeyRow } from "../../shared/api-types.js";
 import type { TraceCollector } from "../middleware/trace-logger.js";
+import { createTtlStore } from "../utils/ttl-store.js";
 
 export const ssoApikeyRoutes = new Hono();
 
 // ── SSO Session Propagation ──
-const SSO_SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
-
 interface SsoSession {
   userId: number;
   username: string;
   services: string[];
-  createdAt: number;
 }
-const ssoSessions = new Map<string, SsoSession>();
-
-/** Remove expired SSO sessions */
-function cleanExpiredSsoSessions() {
-  const now = Date.now();
-  for (const [token, session] of ssoSessions) {
-    if (now - session.createdAt > SSO_SESSION_TTL_MS) {
-      ssoSessions.delete(token);
-    }
-  }
-}
+const ssoSessions = createTtlStore<SsoSession>({ ttlMs: 30 * 60 * 1000 });
 
 ssoApikeyRoutes.post("/login", async (c) => {
   const parsed = await parseBody(c, ssoLoginSchema);
@@ -43,7 +31,7 @@ ssoApikeyRoutes.post("/login", async (c) => {
   }
 
   const ssoToken = uuidv4();
-  ssoSessions.set(ssoToken, { userId: user.id, username: user.username, services: [], createdAt: Date.now() });
+  ssoSessions.set(ssoToken, { userId: user.id, username: user.username, services: [] });
 
   trace.addSessionOp({
     action: "SSO_SESSION_CREATE",
@@ -66,19 +54,15 @@ ssoApikeyRoutes.post("/access-service", async (c) => {
   const { ssoToken, serviceName } = parsed.data;
   const trace = c.get("trace");
 
-  cleanExpiredSsoSessions();
   const session = ssoSessions.get(ssoToken);
   if (!session) {
     return c.json({ success: false, error: "Invalid or expired SSO token" }, 401);
   }
 
-  if (Date.now() - session.createdAt > SSO_SESSION_TTL_MS) {
-    ssoSessions.delete(ssoToken);
-    return c.json({ success: false, error: "SSO session expired" }, 401);
-  }
-
   if (!session.services.includes(serviceName)) {
     session.services.push(serviceName);
+    // Re-set to persist the mutation through the TTL store
+    ssoSessions.set(ssoToken, session);
   }
 
   trace.addSessionOp({
@@ -104,9 +88,10 @@ ssoApikeyRoutes.post("/access-service", async (c) => {
 });
 
 ssoApikeyRoutes.get("/sessions", (c) => {
-  const sessions: (SsoSession & { token: string })[] = [];
-  ssoSessions.forEach((v, k) => sessions.push({ token: k, ...v }));
-  return c.json({ success: true, data: { sessions } });
+  if (process.env.NODE_ENV === "production") {
+    return c.json({ success: false, error: "Debug endpoint disabled in production" }, 403);
+  }
+  return c.json({ success: true, data: { message: "SSO sessions are stored in memory — use /access-service to test" } });
 });
 
 // ── API Key ──
@@ -182,7 +167,7 @@ ssoApikeyRoutes.post("/apikey/verify/hmac", async (c) => {
   const trace = c.get("trace");
   const db = getDb();
 
-  const key = db.prepare("SELECT * FROM api_keys WHERE key_id = ?").get(keyId) as ApiKeyRow | undefined;
+  const key = db.prepare("SELECT key_id, key_prefix, key_hash, name, created_at, last_used FROM api_keys WHERE key_id = ?").get(keyId) as ApiKeyRow | undefined;
   if (!key) {
     return c.json({ success: false, error: "Unknown key_id" }, 401);
   }
@@ -208,8 +193,11 @@ ssoApikeyRoutes.post("/apikey/verify/hmac", async (c) => {
   });
 
   // Timing-safe comparison to prevent timing attacks
-  const valid = signature
-    ? crypto.timingSafeEqual(Buffer.from(expectedSig, "hex"), Buffer.from(signature, "hex"))
+  // Buffer lengths must match for timingSafeEqual — reject early if not valid hex or wrong length
+  const expectedBuf = Buffer.from(expectedSig, "hex");
+  const providedBuf = signature ? Buffer.from(signature, "hex") : Buffer.alloc(0);
+  const valid = providedBuf.length === expectedBuf.length
+    ? crypto.timingSafeEqual(expectedBuf, providedBuf)
     : false;
   trace.addCryptoOp({
     op: "compareSignatures",
@@ -246,9 +234,9 @@ async function verifyApiKey(apiKey: string, method: string, trace: TraceCollecto
     detail: "Hash the provided key to compare with stored hash",
   });
 
-  const key = db.prepare("SELECT * FROM api_keys WHERE key_hash = ?").get(keyHash) as ApiKeyRow | undefined;
+  const key = db.prepare("SELECT key_id, key_prefix, key_hash, name, created_at, last_used FROM api_keys WHERE key_hash = ?").get(keyHash) as ApiKeyRow | undefined;
   trace.addDbQuery({
-    sql: "SELECT * FROM api_keys WHERE key_hash = ?",
+    sql: "SELECT key_id, name FROM api_keys WHERE key_hash = ?",
     params: [keyHash.substring(0, 20) + "..."],
     rows: key ? [{ key_id: key.key_id, name: key.name }] : [],
     ms: 0,

@@ -19,7 +19,6 @@
     "@solidjs/router": "^0.16.1",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.8.0",
-    "concurrently": "^9.2.1",
     "d3-selection": "^3.0.0",
     "d3-transition": "^3.0.1",
     "hono": "^4.12.12",
@@ -31,6 +30,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "@solidjs/testing-library": "^0.8.10",
     "@testing-library/jest-dom": "^6.9.1",
     "@types/bcryptjs": "^2.4.6",

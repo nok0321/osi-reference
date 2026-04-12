@@ -20,9 +20,9 @@ oauthSimRoutes.get("/authorize", (c) => {
   const state = c.req.query("state") || "";
 
   const db = getDb();
-  const client = db.prepare("SELECT * FROM oauth_clients WHERE client_id = ?").get(clientId) as OAuthClientRow | undefined;
+  const client = db.prepare("SELECT client_id, client_secret, name, redirect_uris FROM oauth_clients WHERE client_id = ?").get(clientId) as OAuthClientRow | undefined;
   trace.addDbQuery({
-    sql: "SELECT * FROM oauth_clients WHERE client_id = ?",
+    sql: "SELECT client_id, name, redirect_uris FROM oauth_clients WHERE client_id = ?",
     params: [clientId],
     rows: client ? [client] : [],
     ms: 0,
@@ -63,7 +63,7 @@ oauthSimRoutes.post("/authorize", async (c) => {
   const db = getDb();
 
   // Validate client and redirect_uri
-  const client = db.prepare("SELECT * FROM oauth_clients WHERE client_id = ?").get(client_id) as OAuthClientRow | undefined;
+  const client = db.prepare("SELECT client_id, client_secret, name, redirect_uris FROM oauth_clients WHERE client_id = ?").get(client_id) as OAuthClientRow | undefined;
   if (!client) {
     return c.json({ success: false, error: "Unknown client_id" }, 400);
   }
@@ -76,7 +76,7 @@ oauthSimRoutes.post("/authorize", async (c) => {
   }
 
   // Authenticate user
-  const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as UserRow | undefined;
+  const user = db.prepare("SELECT id, username, password_hash FROM users WHERE username = ?").get(username) as UserRow | undefined;
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return c.json({ success: false, error: "Invalid credentials" }, 401);
   }
@@ -127,10 +127,10 @@ oauthSimRoutes.post("/token", async (c) => {
 
     // Verify client
     const client = db.prepare(
-      "SELECT * FROM oauth_clients WHERE client_id = ? AND client_secret = ?"
+      "SELECT client_id, client_secret, name, redirect_uris FROM oauth_clients WHERE client_id = ? AND client_secret = ?"
     ).get(client_id, client_secret) as OAuthClientRow | undefined;
     trace.addDbQuery({
-      sql: "SELECT * FROM oauth_clients WHERE client_id = ? AND client_secret = ?",
+      sql: "SELECT client_id, name, redirect_uris FROM oauth_clients WHERE client_id = ? AND client_secret = ?",
       params: [client_id, "***"],
       rows: client ? [{ client_id: client.client_id, name: client.name }] : [],
       ms: 0,
@@ -158,7 +158,7 @@ oauthSimRoutes.post("/token", async (c) => {
 
     // Fetch the code details for token generation
     const authCode = db.prepare(
-      "SELECT * FROM oauth_codes WHERE code = ? AND client_id = ?"
+      "SELECT code, client_id, user_id, scope, redirect_uri, expires_at, used FROM oauth_codes WHERE code = ? AND client_id = ?"
     ).get(code, client_id) as OAuthCodeRow | undefined;
 
     if (!authCode) {
@@ -209,7 +209,7 @@ oauthSimRoutes.post("/token", async (c) => {
   if (body.grant_type === "refresh_token") {
     const { refresh_token, client_id } = body;
     const tokenRow = db.prepare(
-      "SELECT * FROM oauth_tokens WHERE refresh_token = ? AND client_id = ?"
+      "SELECT access_token, refresh_token, client_id, user_id, scope, expires_at FROM oauth_tokens WHERE refresh_token = ? AND client_id = ?"
     ).get(refresh_token, client_id) as OAuthTokenRow | undefined;
 
     if (!tokenRow) {

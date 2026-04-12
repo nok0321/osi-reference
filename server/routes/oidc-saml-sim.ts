@@ -6,6 +6,7 @@ import { getDb } from "../db/schema.js";
 import bcrypt from "bcryptjs";
 import { parseBody, oidcAuthorizeSchema, oidcTokenSchema, samlSsoSchema } from "../validation.js";
 import type { UserRow } from "../../shared/api-types.js";
+import { createTtlStore } from "../utils/ttl-store.js";
 
 export const oidcSamlSimRoutes = new Hono();
 
@@ -30,16 +31,13 @@ oidcSamlSimRoutes.get("/.well-known/openid-configuration", (c) => {
 });
 
 // ── OIDC Authorization ──
-const OIDC_CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-
 interface OidcCodeData {
   userId: number;
   nonce: string;
   codeChallenge?: string;
   codeChallengeMethod?: string;
-  createdAt: number;
 }
-const oidcChallenges = new Map<string, OidcCodeData>();
+const oidcChallenges = createTtlStore<OidcCodeData>({ ttlMs: 10 * 60 * 1000 });
 
 oidcSamlSimRoutes.post("/authorize", async (c) => {
   const parsed = await parseBody(c, oidcAuthorizeSchema);
@@ -48,7 +46,7 @@ oidcSamlSimRoutes.post("/authorize", async (c) => {
   const trace = c.get("trace");
   const db = getDb();
 
-  const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as UserRow | undefined;
+  const user = db.prepare("SELECT id, username, password_hash FROM users WHERE username = ?").get(username) as UserRow | undefined;
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return c.json({ success: false, error: "Invalid credentials" }, 401);
   }
@@ -59,7 +57,6 @@ oidcSamlSimRoutes.post("/authorize", async (c) => {
     nonce: nonce || "",
     codeChallenge: code_challenge,
     codeChallengeMethod: code_challenge_method,
-    createdAt: Date.now(),
   });
 
   trace.addCryptoOp({
@@ -93,13 +90,7 @@ oidcSamlSimRoutes.post("/token", async (c) => {
 
   const codeData = oidcChallenges.get(code);
   if (!codeData) {
-    return c.json({ success: false, error: "Invalid authorization code" }, 400);
-  }
-
-  // Check code TTL
-  if (Date.now() - codeData.createdAt > OIDC_CODE_TTL_MS) {
-    oidcChallenges.delete(code);
-    return c.json({ success: false, error: "Authorization code expired" }, 400);
+    return c.json({ success: false, error: "Invalid or expired authorization code" }, 400);
   }
 
   // PKCE verification
@@ -206,6 +197,22 @@ oidcSamlSimRoutes.get("/userinfo", (c) => {
   }
 });
 
+/*
+ * EDUCATIONAL SIMULATION — NOT a real SAML implementation.
+ *
+ * Simplifications vs real SAML 2.0:
+ * - Assertion format: real SAML uses XML with XML Digital Signature (RSA-SHA256 / ECDSA).
+ *   This demo returns JSON with HMAC-SHA256 for readability.
+ * - Encryption: real SAML optionally encrypts assertions with XML Encryption.
+ *   This demo sends assertions in plaintext.
+ * - Binding protocol: real SAML uses HTTP-POST or HTTP-Redirect binding with Base64-encoded XML.
+ *   This demo uses a simple JSON API.
+ * - Metadata exchange: real SPs and IdPs exchange XML metadata with embedded certificates.
+ *   This demo has a minimal /metadata endpoint.
+ * - Signature validation: real SPs verify XML-DSIG against the IdP's public certificate.
+ *   This demo skips certificate-based verification entirely.
+ */
+
 // ── SAML Simulation ──
 oidcSamlSimRoutes.post("/saml/sso", async (c) => {
   const parsed = await parseBody(c, samlSsoSchema);
@@ -214,7 +221,7 @@ oidcSamlSimRoutes.post("/saml/sso", async (c) => {
   const trace = c.get("trace");
   const db = getDb();
 
-  const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username) as UserRow | undefined;
+  const user = db.prepare("SELECT id, username, password_hash FROM users WHERE username = ?").get(username) as UserRow | undefined;
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return c.json({ success: false, error: "Invalid credentials" }, 401);
   }

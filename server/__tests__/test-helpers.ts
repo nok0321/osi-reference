@@ -11,6 +11,10 @@ import { sessionAuthRoutes } from "../routes/session-auth.js";
 import { tokenAuthRoutes } from "../routes/token-auth.js";
 import { oauthSimRoutes } from "../routes/oauth-sim.js";
 import { rbacRoutes } from "../routes/rbac.js";
+import { kerberoSimRoutes } from "../routes/kerberos-sim.js";
+import { tlsSimRoutes } from "../routes/tls-sim.js";
+import { ssoApikeyRoutes } from "../routes/sso-apikey.js";
+import { mfaTotpRoutes } from "../routes/mfa-totp.js";
 
 /** Create a fresh Hono app backed by an in-memory SQLite DB. */
 export function createTestApp() {
@@ -26,6 +30,10 @@ export function createTestApp() {
   app.route("/api/token", tokenAuthRoutes);
   app.route("/api/oauth", oauthSimRoutes);
   app.route("/api/rbac", rbacRoutes);
+  app.route("/api/kerberos", kerberoSimRoutes);
+  app.route("/api/tls", tlsSimRoutes);
+  app.route("/api/sso", ssoApikeyRoutes);
+  app.route("/api/mfa", mfaTotpRoutes);
 
   return { app, db };
 }

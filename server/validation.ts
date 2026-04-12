@@ -165,7 +165,7 @@ export const passkeyAuthVerifySchema = z.object({
 export const ssoLoginSchema = z.object({ username: z.string().min(1) });
 export const ssoAccessServiceSchema = z.object({
   ssoToken: z.string().min(1),
-  serviceName: z.string().min(1),
+  serviceName: z.string().min(1).max(64).regex(/^[a-zA-Z0-9_-]+$/, "serviceName must be alphanumeric with hyphens/underscores"),
 });
 export const apikeyGenerateSchema = z.object({ name: z.string().max(128).default("default") });
 export const apikeyHmacSchema = z.object({

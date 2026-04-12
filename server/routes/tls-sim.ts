@@ -1,11 +1,24 @@
 import { Hono } from "hono";
 import crypto from "crypto";
 import { parseBody, tlsSessionSchema } from "../validation.js";
+import { createTtlStore } from "../utils/ttl-store.js";
 
 export const tlsSimRoutes = new Hono();
 
-// Simulated TLS 1.3 handshake state with TTL cleanup
-const HANDSHAKE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+/*
+ * EDUCATIONAL SIMULATION — NOT a real TLS 1.3 implementation.
+ *
+ * Simplifications vs RFC 8446 (TLS 1.3):
+ * - Key derivation: real TLS 1.3 uses HKDF-Extract / HKDF-Expand-Label (RFC 5869).
+ *   This demo uses simplified HMAC-SHA384 calls to illustrate the concept.
+ * - Certificate verification: real TLS verifies X.509 certificate chains against trusted CAs.
+ *   This demo generates a self-signed cert for display only.
+ * - Handshake transcript: real TLS 1.3 hashes all handshake messages into the key schedule.
+ *   This demo uses only clientRandom + serverRandom.
+ * - Encrypted Extensions / Finished messages: omitted.
+ * - 0-RTT (early data): not simulated.
+ * - AEAD encryption: the demo derives keys but never actually encrypts application data.
+ */
 
 interface HandshakeState {
   clientRandom: string;
@@ -15,19 +28,8 @@ interface HandshakeState {
   sharedSecret?: string;
   handshakeSecret?: string;
   masterSecret?: string;
-  createdAt: number;
 }
-const handshakes = new Map<string, HandshakeState>();
-
-/** Remove stale handshake sessions to prevent memory leaks */
-function cleanExpiredHandshakes() {
-  const now = Date.now();
-  for (const [id, state] of handshakes) {
-    if (now - state.createdAt > HANDSHAKE_TTL_MS) {
-      handshakes.delete(id);
-    }
-  }
-}
+const handshakes = createTtlStore<HandshakeState>({ ttlMs: 5 * 60 * 1000 });
 
 // Step 1: ClientHello
 tlsSimRoutes.post("/client-hello", async (c) => {
@@ -63,8 +65,6 @@ tlsSimRoutes.post("/client-hello", async (c) => {
   serverECDH.generateKeys();
   const serverRandom = crypto.randomBytes(32).toString("hex");
 
-  cleanExpiredHandshakes();
-
   handshakes.set(sessionId, {
     clientRandom,
     serverRandom,
@@ -73,7 +73,6 @@ tlsSimRoutes.post("/client-hello", async (c) => {
       privateKey: serverECDH.getPrivateKey("hex"),
     },
     clientPublicKey: clientPubKey,
-    createdAt: Date.now(),
   });
 
   return c.json({
@@ -101,7 +100,6 @@ tlsSimRoutes.post("/server-hello", async (c) => {
   const { sessionId } = parsed.data;
   const trace = c.get("trace");
 
-  cleanExpiredHandshakes();
   const state = handshakes.get(sessionId);
   if (!state) {
     return c.json({ success: false, error: "No handshake in progress" }, 400);
@@ -142,7 +140,6 @@ tlsSimRoutes.post("/key-exchange", async (c) => {
   const { sessionId } = parsed.data;
   const trace = c.get("trace");
 
-  cleanExpiredHandshakes();
   const state = handshakes.get(sessionId);
   if (!state || !state.clientPublicKey) {
     return c.json({ success: false, error: "Missing handshake state" }, 400);
@@ -187,9 +184,8 @@ tlsSimRoutes.post("/key-exchange", async (c) => {
     detail: "Final master secret for application data encryption",
   });
 
-  state.sharedSecret = sharedSecret;
-  state.handshakeSecret = handshakeSecret;
-  state.masterSecret = masterSecret;
+  // Update the handshake state with derived secrets
+  handshakes.set(sessionId, { ...state, sharedSecret, handshakeSecret, masterSecret });
 
   return c.json({
     success: true,
@@ -254,7 +250,6 @@ tlsSimRoutes.post("/finish", async (c) => {
   const { sessionId } = parsed.data;
   const trace = c.get("trace");
 
-  cleanExpiredHandshakes();
   const state = handshakes.get(sessionId);
   if (!state?.masterSecret) {
     return c.json({ success: false, error: "Handshake not complete" }, 400);

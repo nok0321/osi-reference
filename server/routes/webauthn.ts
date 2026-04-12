@@ -9,6 +9,7 @@ import type { RegistrationResponseJSON, AuthenticationResponseJSON } from "@simp
 import { getDb } from "../db/schema.js";
 import { parseBody, webauthnUsernameSchema, webauthnRegisterVerifySchema, webauthnAuthVerifySchema } from "../validation.js";
 import type { UserRow, WebAuthnCredentialRow } from "../../shared/api-types.js";
+import { createTtlStore } from "../utils/ttl-store.js";
 
 export const webauthnRoutes = new Hono();
 
@@ -17,38 +18,7 @@ const RP_ID = "localhost";
 const ORIGIN = "http://localhost:3000";
 
 // In-memory challenge store (keyed by username) with 5-minute TTL
-const CHALLENGE_TTL_MS = 5 * 60 * 1000;
-
-interface StoredChallenge {
-  challenge: string;
-  createdAt: number;
-}
-const challenges = new Map<string, StoredChallenge>();
-
-function getChallenge(username: string): string | undefined {
-  const stored = challenges.get(username);
-  if (!stored) return undefined;
-  if (Date.now() - stored.createdAt > CHALLENGE_TTL_MS) {
-    challenges.delete(username);
-    return undefined;
-  }
-  return stored.challenge;
-}
-
-function setChallenge(username: string, challenge: string) {
-  cleanExpiredChallenges();
-  challenges.set(username, { challenge, createdAt: Date.now() });
-}
-
-/** Remove all expired challenges to prevent memory leaks */
-function cleanExpiredChallenges() {
-  const now = Date.now();
-  for (const [key, stored] of challenges) {
-    if (now - stored.createdAt > CHALLENGE_TTL_MS) {
-      challenges.delete(key);
-    }
-  }
-}
+const challenges = createTtlStore<string>({ ttlMs: 5 * 60 * 1000 });
 
 webauthnRoutes.post("/register/options", async (c) => {
   const parsed = await parseBody(c, webauthnUsernameSchema);
@@ -94,7 +64,7 @@ webauthnRoutes.post("/register/options", async (c) => {
     },
   });
 
-  setChallenge(username, options.challenge);
+  challenges.set(username, options.challenge);
 
   trace.addCryptoOp({
     op: "generateChallenge",
@@ -130,7 +100,7 @@ webauthnRoutes.post("/register/verify", async (c) => {
   const trace = c.get("trace");
   const db = getDb();
 
-  const expectedChallenge = getChallenge(username);
+  const expectedChallenge = challenges.get(username);
   if (!expectedChallenge) {
     return c.json({ success: false, error: "No challenge found or challenge expired — start registration first" }, 400);
   }
@@ -223,7 +193,7 @@ webauthnRoutes.post("/auth/options", async (c) => {
     userVerification: "preferred",
   });
 
-  setChallenge(username, options.challenge);
+  challenges.set(username, options.challenge);
 
   trace.addCryptoOp({
     op: "generateAuthChallenge",
@@ -253,7 +223,7 @@ webauthnRoutes.post("/auth/verify", async (c) => {
   const trace = c.get("trace");
   const db = getDb();
 
-  const expectedChallenge = getChallenge(username);
+  const expectedChallenge = challenges.get(username);
   if (!expectedChallenge) {
     return c.json({ success: false, error: "No challenge found or challenge expired" }, 400);
   }

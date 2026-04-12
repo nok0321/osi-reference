@@ -28,3 +28,6 @@ npm-debug.log*
 
 # Server DB
 server/db/data.sqlite
+server/db/data.sqlite-shm
+server/db/data.sqlite-wal
+server/db/data.sqlite-journal

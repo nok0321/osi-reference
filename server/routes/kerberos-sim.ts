@@ -5,6 +5,20 @@ import { parseBody, kerberosAsReqSchema, kerberosTgsReqSchema, kerberosApReqSche
 
 export const kerberoSimRoutes = new Hono();
 
+/*
+ * EDUCATIONAL SIMULATION — NOT a real Kerberos implementation.
+ *
+ * Simplifications vs real MIT/Heimdal Kerberos:
+ * - Key derivation: real Kerberos uses string2key (PBKDF2 with 4096+ iterations, per-user salt).
+ *   This demo uses plain SHA-256 for simplicity, which lacks salt and iteration hardening.
+ * - Encryption: real KDCs use AES-CTS-HMAC-SHA256 or similar AEAD modes.
+ *   This demo uses AES-256-CBC without authentication (no HMAC/GCM).
+ * - Ticket structure: real tickets are ASN.1/DER encoded per RFC 4120.
+ *   This demo uses JSON for readability.
+ * - Mutual authentication (AP-REP): omitted for brevity.
+ * - Pre-authentication (PA-ENC-TIMESTAMP): omitted.
+ */
+
 // Derive a proper 32-byte key via SHA-256 hash (AES-256 requires exactly 32 bytes)
 const KDC_SECRET = crypto.createHash("sha256").update("osi-demo-kdc-master-key").digest();
 const REALM = "OSI-DEMO.LOCAL";
@@ -215,12 +229,18 @@ kerberoSimRoutes.post("/ap-req", async (c) => {
 });
 
 kerberoSimRoutes.get("/ticket-cache", (c) => {
+  if (process.env.NODE_ENV === "production") {
+    return c.json({ success: false, error: "Debug endpoint disabled in production" }, 403);
+  }
   const db = getDb();
-  const tickets = db.prepare("SELECT * FROM kerberos_tickets ORDER BY created_at DESC").all();
+  const tickets = db.prepare("SELECT ticket_type, principal, realm, valid_until, created_at FROM kerberos_tickets ORDER BY created_at DESC").all();
   return c.json({ success: true, data: { tickets } });
 });
 
 kerberoSimRoutes.post("/reset", (c) => {
+  if (process.env.NODE_ENV === "production") {
+    return c.json({ success: false, error: "Reset disabled in production" }, 403);
+  }
   const db = getDb();
   db.prepare("DELETE FROM kerberos_tickets").run();
   return c.json({ success: true, data: { message: "Ticket cache cleared" } });

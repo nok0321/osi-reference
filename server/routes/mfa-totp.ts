@@ -22,6 +22,7 @@ import {
   TOTP_DIGITS,
   TOTP_ALGORITHM,
 } from "../utils/totp.js";
+import { createTtlStore } from "../utils/ttl-store.js";
 
 export const mfaTotpRoutes = new Hono();
 
@@ -31,20 +32,11 @@ const DIGITS = TOTP_DIGITS;
 const ALGORITHM = TOTP_ALGORITHM;
 
 // ── Challenge store for 2-step login (challengeId → userId) ──
-const LOGIN_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 interface LoginChallenge {
   userId: number;
   username: string;
-  createdAt: number;
 }
-const loginChallenges = new Map<string, LoginChallenge>();
-
-function cleanExpiredLoginChallenges() {
-  const now = Date.now();
-  for (const [key, c] of loginChallenges) {
-    if (now - c.createdAt > LOGIN_CHALLENGE_TTL_MS) loginChallenges.delete(key);
-  }
-}
+const loginChallenges = createTtlStore<LoginChallenge>({ ttlMs: 5 * 60 * 1000 });
 
 
 // ── POST /enroll/start ──
@@ -279,7 +271,6 @@ mfaTotpRoutes.post("/totp/login/step1", async (c) => {
   const trace = c.get("trace");
   const db = getDb();
 
-  cleanExpiredLoginChallenges();
 
   // Look up user
   const t0 = performance.now();
@@ -349,7 +340,6 @@ mfaTotpRoutes.post("/totp/login/step1", async (c) => {
   loginChallenges.set(challengeId, {
     userId: user.id,
     username: user.username,
-    createdAt: Date.now(),
   });
   trace.addSessionOp({
     action: "STORE_LOGIN_CHALLENGE",
@@ -379,7 +369,6 @@ mfaTotpRoutes.post("/totp/login/step2", async (c) => {
   const trace = c.get("trace");
   const db = getDb();
 
-  cleanExpiredLoginChallenges();
 
   const challenge = loginChallenges.get(challengeId);
   trace.addSessionOp({
