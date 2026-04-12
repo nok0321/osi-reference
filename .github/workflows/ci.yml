@@ -22,8 +22,11 @@ jobs:
 
       - run: npm ci
 
-      - name: Type check
+      - name: Type check (client)
         run: npx tsc --noEmit
+
+      - name: Type check (server)
+        run: npx tsc --noEmit -p server/tsconfig.json
 
       - name: Test
         run: npm run test:ci

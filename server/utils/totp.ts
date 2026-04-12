@@ -96,10 +96,15 @@ export function verifyTotpWithDetail(
   const base = currentCounter();
   const attempts: TotpDetail[] = [];
   let match: TotpDetail | null = null;
+  const providedBuf = Buffer.from(code, "utf8");
   for (let i = -window; i <= window; i++) {
     const d = computeTotp(secret, base + i);
     attempts.push(d);
-    if (!match && d.code === code) match = d;
+    if (match) continue;
+    const expectedBuf = Buffer.from(d.code, "utf8");
+    if (providedBuf.length === expectedBuf.length && crypto.timingSafeEqual(providedBuf, expectedBuf)) {
+      match = d;
+    }
   }
   return { match, attempts };
 }

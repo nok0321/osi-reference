@@ -77,7 +77,7 @@ oauthSimRoutes.post("/authorize", async (c) => {
 
   // Authenticate user
   const user = db.prepare("SELECT id, username, password_hash FROM users WHERE username = ?").get(username) as UserRow | undefined;
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  if (!user || !(await bcrypt.compare(password, user.password_hash))) {
     return c.json({ success: false, error: "Invalid credentials" }, 401);
   }
 

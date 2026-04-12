@@ -144,6 +144,15 @@ function initSchema(db: Database.Database) {
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+      jti TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      expires_at TEXT NOT NULL,
+      revoked INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
     -- Indexes for frequently queried columns
     CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
@@ -158,6 +167,8 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
     CREATE INDEX IF NOT EXISTS idx_kerberos_tickets_principal ON kerberos_tickets(principal);
     CREATE INDEX IF NOT EXISTS idx_user_mfa_user_id ON user_mfa(user_id);
+    CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+    CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
   `);
 }
 
@@ -170,6 +181,7 @@ export function seedDb() {
     DELETE FROM api_keys;
     DELETE FROM webauthn_credentials;
     DELETE FROM user_mfa;
+    DELETE FROM refresh_tokens;
     DELETE FROM role_permissions;
     DELETE FROM user_roles;
     DELETE FROM permissions;

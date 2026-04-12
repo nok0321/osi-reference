@@ -24,7 +24,7 @@ sessionAuthRoutes.post("/login", async (c) => {
     ms: performance.now() - t0,
   });
 
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  if (!user || !(await bcrypt.compare(password, user.password_hash))) {
     return c.json({ success: false, error: "Invalid credentials" }, 401);
   }
 

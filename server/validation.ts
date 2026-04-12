@@ -15,8 +15,12 @@ export async function parseBody<T extends z.ZodTypeAny>(
   const raw = await c.req.json().catch(() => null);
   const result = schema.safeParse(raw);
   if (!result.success) {
-    const issues = result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
-    return { error: c.json({ success: false, error: `Validation error: ${issues}` }, 400) };
+    // In production, avoid leaking internal zod paths/messages. In dev, show details for debuggability.
+    const isProd = process.env.NODE_ENV === "production";
+    const message = isProd
+      ? "Invalid input"
+      : `Validation error: ${result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`;
+    return { error: c.json({ success: false, error: message }, 400) };
   }
   return { data: result.data };
 }

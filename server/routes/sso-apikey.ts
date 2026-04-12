@@ -160,6 +160,18 @@ ssoApikeyRoutes.get("/apikey/verify/query", (c) => {
 });
 
 // HMAC signed request
+const HMAC_TIMESTAMP_SKEW_MS = 5 * 60 * 1000;
+
+/** Parse an ISO-8601 string or epoch number (seconds or ms) into epoch ms. Returns NaN on failure. */
+function parseTimestamp(ts: string): number {
+  const asIso = Date.parse(ts);
+  if (!Number.isNaN(asIso)) return asIso;
+  const asNum = Number(ts);
+  if (!Number.isFinite(asNum)) return NaN;
+  // Heuristic: values below 1e12 are seconds (year ~2001+ in ms starts at 1e12)
+  return asNum < 1e12 ? asNum * 1000 : asNum;
+}
+
 ssoApikeyRoutes.post("/apikey/verify/hmac", async (c) => {
   const parsed = await parseBody(c, apikeyHmacSchema);
   if ("error" in parsed) return parsed.error;
@@ -170,6 +182,26 @@ ssoApikeyRoutes.post("/apikey/verify/hmac", async (c) => {
   const key = db.prepare("SELECT key_id, key_prefix, key_hash, name, created_at, last_used FROM api_keys WHERE key_id = ?").get(keyId) as ApiKeyRow | undefined;
   if (!key) {
     return c.json({ success: false, error: "Unknown key_id" }, 401);
+  }
+
+  // Timestamp skew check — prevents indefinite replay of a valid signed request
+  const ts = parseTimestamp(timestamp);
+  const now = Date.now();
+  const skew = Number.isNaN(ts) ? NaN : Math.abs(now - ts);
+  trace.addCryptoOp({
+    op: "timestampSkewCheck",
+    input: `timestamp="${timestamp}", now=${new Date(now).toISOString()}`,
+    output: Number.isNaN(ts)
+      ? "INVALID ✗ — cannot parse"
+      : `skew=${Math.round(skew / 1000)}s (limit=${HMAC_TIMESTAMP_SKEW_MS / 1000}s)`,
+    algo: "±5min window",
+    detail: "Reject requests with timestamps outside the allowed clock-skew window to prevent replay attacks",
+  });
+  if (Number.isNaN(ts) || skew > HMAC_TIMESTAMP_SKEW_MS) {
+    return c.json(
+      { success: false, error: "Timestamp invalid or outside ±5min skew window" },
+      401
+    );
   }
 
   // Reconstruct canonical string

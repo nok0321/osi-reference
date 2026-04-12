@@ -35,8 +35,10 @@ const ALGORITHM = TOTP_ALGORITHM;
 interface LoginChallenge {
   userId: number;
   username: string;
+  createdAt: number;
 }
-const loginChallenges = createTtlStore<LoginChallenge>({ ttlMs: 5 * 60 * 1000 });
+const LOGIN_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+const loginChallenges = createTtlStore<LoginChallenge>({ ttlMs: LOGIN_CHALLENGE_TTL_MS });
 
 
 // ── POST /enroll/start ──
@@ -299,7 +301,7 @@ mfaTotpRoutes.post("/totp/login/step1", async (c) => {
   }
 
   // Compare password
-  const match = bcrypt.compareSync(password, user.password_hash);
+  const match = await bcrypt.compare(password, user.password_hash);
   trace.addCryptoOp({
     op: "bcrypt.compare",
     input: `password="[REDACTED]" vs stored_hash="${user.password_hash.substring(0, 20)}..."`,
@@ -340,6 +342,7 @@ mfaTotpRoutes.post("/totp/login/step1", async (c) => {
   loginChallenges.set(challengeId, {
     userId: user.id,
     username: user.username,
+    createdAt: Date.now(),
   });
   trace.addSessionOp({
     action: "STORE_LOGIN_CHALLENGE",

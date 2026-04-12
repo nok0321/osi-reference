@@ -4,7 +4,10 @@ import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
 import { getDb } from "../db/schema.js";
 import { parseBody, tokenLoginSchema, tokenRefreshSchema } from "../validation.js";
-import type { UserRow } from "../../shared/api-types.js";
+import type { UserRow, RefreshTokenRow } from "../../shared/api-types.js";
+
+const REFRESH_TTL_DAYS = 7;
+const REFRESH_TTL_MS = REFRESH_TTL_DAYS * 24 * 60 * 60 * 1000;
 
 export const tokenAuthRoutes = new Hono();
 
@@ -26,7 +29,7 @@ tokenAuthRoutes.post("/login", async (c) => {
     ms: 0,
   });
 
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  if (!user || !(await bcrypt.compare(password, user.password_hash))) {
     return c.json({ success: false, error: "Invalid credentials" }, 401);
   }
 
@@ -43,17 +46,27 @@ tokenAuthRoutes.post("/login", async (c) => {
     detail: `Secret: "${JWT_SECRET.substring(0, 15)}..." / Expires: 15 minutes`,
   });
 
+  const jti = uuidv4();
   const refreshToken = jwt.sign(
-    { sub: user.id, type: "refresh", jti: uuidv4() },
+    { sub: user.id, type: "refresh", jti },
     REFRESH_SECRET,
-    { expiresIn: "7d" }
+    { expiresIn: `${REFRESH_TTL_DAYS}d` }
   );
+  const refreshExpiresAt = new Date(Date.now() + REFRESH_TTL_MS).toISOString();
+  db.prepare(
+    "INSERT INTO refresh_tokens (jti, user_id, expires_at) VALUES (?, ?, ?)"
+  ).run(jti, user.id, refreshExpiresAt);
+  trace.addDbQuery({
+    sql: "INSERT INTO refresh_tokens (jti, user_id, expires_at) VALUES (?, ?, ?)",
+    params: [jti, user.id, refreshExpiresAt],
+    ms: 0,
+  });
   trace.addCryptoOp({
     op: "jwt.sign(refreshToken)",
-    input: JSON.stringify({ sub: user.id, type: "refresh" }),
+    input: JSON.stringify({ sub: user.id, type: "refresh", jti }),
     output: refreshToken.substring(0, 40) + "...",
     algo: "HS256",
-    detail: `Secret: "${REFRESH_SECRET.substring(0, 15)}..." / Expires: 7 days`,
+    detail: `Secret: "${REFRESH_SECRET.substring(0, 15)}..." / Expires: ${REFRESH_TTL_DAYS} days / jti stored in DB for revocation & rotation`,
   });
 
   return c.json({
@@ -123,11 +136,13 @@ tokenAuthRoutes.post("/refresh", async (c) => {
   const trace = c.get("trace");
 
   try {
-    const decoded = jwt.verify(refreshToken, REFRESH_SECRET) as unknown as { sub: number; type: string };
+    const decoded = jwt.verify(refreshToken, REFRESH_SECRET) as unknown as { sub: number; type: string; jti: string };
 
-    // Ensure this is actually a refresh token
     if (decoded.type !== "refresh") {
       return c.json({ success: false, error: "Invalid token type — expected refresh token" }, 401);
+    }
+    if (!decoded.jti) {
+      return c.json({ success: false, error: "Refresh token missing jti" }, 401);
     }
 
     trace.addCryptoOp({
@@ -138,6 +153,24 @@ tokenAuthRoutes.post("/refresh", async (c) => {
     });
 
     const db = getDb();
+
+    // Atomically consume the refresh token: only succeeds if jti exists, not revoked, not expired.
+    // UPDATE ... WHERE prevents TOCTOU race between concurrent refresh requests using the same token.
+    const consumeResult = db
+      .prepare(
+        "UPDATE refresh_tokens SET revoked = 1 WHERE jti = ? AND revoked = 0 AND expires_at > datetime('now')"
+      )
+      .run(decoded.jti);
+    trace.addDbQuery({
+      sql: "UPDATE refresh_tokens SET revoked = 1 WHERE jti = ? AND revoked = 0 AND expires_at > datetime('now')",
+      params: [decoded.jti],
+      rows: [{ changes: consumeResult.changes }],
+      ms: 0,
+    });
+    if (consumeResult.changes === 0) {
+      return c.json({ success: false, error: "Refresh token revoked, reused, or expired" }, 401);
+    }
+
     const user = db.prepare("SELECT id, username FROM users WHERE id = ?").get(decoded.sub) as Pick<UserRow, "id" | "username"> | undefined;
     if (!user) {
       return c.json({ success: false, error: "User not found" }, 401);
@@ -155,9 +188,28 @@ tokenAuthRoutes.post("/refresh", async (c) => {
       algo: "HS256",
     });
 
+    // Rotation: issue a new refresh token with a new jti
+    const newJti = uuidv4();
+    const newRefreshToken = jwt.sign(
+      { sub: user.id, type: "refresh", jti: newJti },
+      REFRESH_SECRET,
+      { expiresIn: `${REFRESH_TTL_DAYS}d` }
+    );
+    const newRefreshExpiresAt = new Date(Date.now() + REFRESH_TTL_MS).toISOString();
+    db.prepare(
+      "INSERT INTO refresh_tokens (jti, user_id, expires_at) VALUES (?, ?, ?)"
+    ).run(newJti, user.id, newRefreshExpiresAt);
+    trace.addCryptoOp({
+      op: "jwt.sign(rotatedRefreshToken)",
+      input: JSON.stringify({ sub: user.id, type: "refresh", jti: newJti }),
+      output: newRefreshToken.substring(0, 40) + "...",
+      algo: "HS256",
+      detail: "Rotation: old jti revoked, new jti issued",
+    });
+
     return c.json({
       success: true,
-      data: { accessToken: newAccessToken, expiresIn: 900, tokenType: "Bearer" },
+      data: { accessToken: newAccessToken, refreshToken: newRefreshToken, expiresIn: 900, tokenType: "Bearer" },
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";

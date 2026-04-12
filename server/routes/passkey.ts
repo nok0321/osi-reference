@@ -18,6 +18,17 @@ import { createTtlStore } from "../utils/ttl-store.js";
 
 export const passkeyRoutes = new Hono();
 
+/** Safely parse the `transports` JSON column — returns undefined if missing or malformed. */
+function parseTransports(raw: string | null | undefined): string[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 const RP_NAME = "OSI Reference Demo";
 const RP_ID = "localhost";
 const ORIGIN = "http://localhost:3000";
@@ -69,7 +80,7 @@ passkeyRoutes.post("/register/options", async (c) => {
     attestationType: "none",
     excludeCredentials: existingCreds.map((cred) => ({
       id: cred.credential_id,
-      transports: cred.transports ? JSON.parse(cred.transports) : undefined,
+      transports: parseTransports(cred.transports) as never,
     })),
     authenticatorSelection: {
       residentKey: "required",
