@@ -22,6 +22,15 @@ Thumbs.db
 
 # Claude Code
 .claude/
+CHECKPOINT.md
+PLAN.md
+
+# TypeScript
+*.tsbuildinfo
+
+# Test / Coverage
+coverage/
+.vitest/
 
 # Logs
 npm-debug.log*
