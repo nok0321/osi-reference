@@ -1,0 +1,13 @@
+# GitGuardian configuration
+# Reference: https://docs.gitguardian.com/ggshield-docs/reference/config-file
+#
+# This repo is an educational reference for auth/security concepts and therefore
+# contains intentional hardcoded demo values (JWT secrets, test passwords, etc.)
+# in test fixtures. These are not real credentials.
+
+version: 2
+
+secret:
+  # Test files contain stub credentials (e.g. TEST_PW) that are not real secrets.
+  ignored-paths:
+    - "server/__tests__/**"
