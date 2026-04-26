@@ -14,6 +14,7 @@ export function getDb(): Database.Database {
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
     initSchema(db);
+    migrateSchema(db);
   }
   return db;
 }
@@ -28,7 +29,24 @@ export function _createTestDb(): Database.Database {
   const memDb = new Database(":memory:");
   memDb.pragma("foreign_keys = ON");
   initSchema(memDb);
+  migrateSchema(memDb);
   return memDb;
+}
+
+/**
+ * Phase 2 (E-3): is_attack_sim 列を 5 テーブルに追加するマイグレーション。
+ * ROB-FIND-001 対応: CREATE TABLE IF NOT EXISTS は既存テーブルを変更しないため、
+ * Phase 2 以前の data.sqlite を持つ環境では明示的な ALTER TABLE が必須。
+ * 本関数は idempotent (既に列が存在すれば何もしない)。
+ */
+function migrateSchema(db: Database.Database) {
+  const tablesNeedingFlag = ["sessions", "oauth_codes", "oauth_tokens", "api_keys", "kerberos_tickets"] as const;
+  for (const tbl of tablesNeedingFlag) {
+    const cols = db.prepare(`PRAGMA table_info(${tbl})`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === "is_attack_sim")) {
+      db.exec(`ALTER TABLE ${tbl} ADD COLUMN is_attack_sim INTEGER NOT NULL DEFAULT 0`);
+    }
+  }
 }
 
 function initSchema(db: Database.Database) {
@@ -46,6 +64,7 @@ function initSchema(db: Database.Database) {
       data TEXT DEFAULT '{}',
       created_at TEXT DEFAULT (datetime('now')),
       expires_at TEXT NOT NULL,
+      is_attack_sim INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
 
@@ -63,7 +82,8 @@ function initSchema(db: Database.Database) {
       scope TEXT,
       redirect_uri TEXT,
       expires_at TEXT NOT NULL,
-      used INTEGER DEFAULT 0
+      used INTEGER DEFAULT 0,
+      is_attack_sim INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS oauth_tokens (
@@ -72,7 +92,8 @@ function initSchema(db: Database.Database) {
       client_id TEXT NOT NULL,
       user_id INTEGER NOT NULL,
       scope TEXT,
-      expires_at TEXT NOT NULL
+      expires_at TEXT NOT NULL,
+      is_attack_sim INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS roles (
@@ -121,7 +142,8 @@ function initSchema(db: Database.Database) {
       user_id INTEGER,
       name TEXT,
       created_at TEXT DEFAULT (datetime('now')),
-      last_used TEXT
+      last_used TEXT,
+      is_attack_sim INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS kerberos_tickets (
@@ -132,7 +154,8 @@ function initSchema(db: Database.Database) {
       encrypted_data TEXT NOT NULL,
       session_key TEXT NOT NULL,
       valid_until TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now'))
+      created_at TEXT DEFAULT (datetime('now')),
+      is_attack_sim INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS user_mfa (

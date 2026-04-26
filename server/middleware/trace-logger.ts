@@ -11,8 +11,12 @@ export interface TraceCollector {
   addDbQuery(q: DbQuery): void;
   addCryptoOp(op: CryptoOp): void;
   addSessionOp(op: SessionOp): void;
-  /** timestamp は自動付与されるため省略可 (DESIGN/03 §5.1 参照)。 */
-  addAttackStep(step: Omit<AttackStep, "timestamp">): void;
+  /**
+   * AttackStep を追加。timestamp が含まれていればそれを尊重し、なければ Date.now() で自動付与する。
+   * これにより呼び出し側で timestamp を 1 度だけ計算して `_trace.attackSteps` と `data.steps` の
+   * 両方に同一値を共有させることが可能 (ROB-FIND-009 対応)。
+   */
+  addAttackStep(step: AttackStep | Omit<AttackStep, "timestamp">): void;
   getTrace(): ServerTrace;
 }
 
@@ -26,7 +30,12 @@ function createTraceCollector(): TraceCollector {
     addDbQuery(q) { dbQueries.push(q); },
     addCryptoOp(op) { cryptoOps.push(op); },
     addSessionOp(op) { sessionOps.push(op); },
-    addAttackStep(step) { attackSteps.push({ ...step, timestamp: Date.now() }); },
+    addAttackStep(step) {
+      const ts = "timestamp" in step && typeof step.timestamp === "number"
+        ? step.timestamp
+        : Date.now();
+      attackSteps.push({ ...step, timestamp: ts });
+    },
     getTrace() {
       const trace: ServerTrace = {};
       if (dbQueries.length) trace.dbQueries = dbQueries;

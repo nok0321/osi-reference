@@ -85,12 +85,13 @@ oauthSimRoutes.post("/authorize", async (c) => {
   const code = uuidv4();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
+  // is_attack_sim=0 で正常系認可コードを明示的に挿入 (E-3)
   db.prepare(
-    "INSERT INTO oauth_codes (code, client_id, user_id, scope, redirect_uri, expires_at) VALUES (?, ?, ?, ?, ?, ?)"
+    "INSERT INTO oauth_codes (code, client_id, user_id, scope, redirect_uri, expires_at, is_attack_sim) VALUES (?, ?, ?, ?, ?, ?, 0)"
   ).run(code, client_id, user.id, scope, redirect_uri, expiresAt);
 
   trace.addDbQuery({
-    sql: "INSERT INTO oauth_codes (code, client_id, user_id, scope, redirect_uri, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+    sql: "INSERT INTO oauth_codes (code, client_id, user_id, scope, redirect_uri, expires_at, is_attack_sim) VALUES (?, ?, ?, ?, ?, ?, 0)",
     params: [code, client_id, user.id, scope, redirect_uri, expiresAt],
     ms: 0,
   });
@@ -141,12 +142,13 @@ oauthSimRoutes.post("/token", async (c) => {
     }
 
     // Atomically mark code as used and verify in one step (prevents double-spend race condition)
+    // is_attack_sim=0 のみ対象 (E-3: 攻撃シミュレーションの認可コードを誤更新しない)
     const t1 = performance.now();
     const codeUpdate = db.prepare(
-      "UPDATE oauth_codes SET used = 1 WHERE code = ? AND client_id = ? AND used = 0 AND expires_at > datetime('now')"
+      "UPDATE oauth_codes SET used = 1 WHERE code = ? AND client_id = ? AND used = 0 AND expires_at > datetime('now') AND is_attack_sim = 0"
     ).run(code, client_id);
     trace.addDbQuery({
-      sql: "UPDATE oauth_codes SET used = 1 WHERE code = ? AND client_id = ? AND used = 0 AND expires_at > datetime('now')",
+      sql: "UPDATE oauth_codes SET used = 1 WHERE code = ? AND client_id = ? AND used = 0 AND expires_at > datetime('now') AND is_attack_sim = 0",
       params: [code, client_id],
       rows: [{ changes: codeUpdate.changes }],
       ms: performance.now() - t1,
@@ -156,9 +158,9 @@ oauthSimRoutes.post("/token", async (c) => {
       return c.json({ success: false, error: "Invalid or expired authorization code" }, 400);
     }
 
-    // Fetch the code details for token generation
+    // Fetch the code details for token generation (is_attack_sim=0 のみ)
     const authCode = db.prepare(
-      "SELECT code, client_id, user_id, scope, redirect_uri, expires_at, used FROM oauth_codes WHERE code = ? AND client_id = ?"
+      "SELECT code, client_id, user_id, scope, redirect_uri, expires_at, used FROM oauth_codes WHERE code = ? AND client_id = ? AND is_attack_sim = 0"
     ).get(code, client_id) as OAuthCodeRow | undefined;
 
     if (!authCode) {
@@ -183,8 +185,9 @@ oauthSimRoutes.post("/token", async (c) => {
     const refreshToken = uuidv4();
     const expiresAt = new Date(Date.now() + 3600 * 1000).toISOString();
 
+    // is_attack_sim=0 で正常系トークンを挿入 (E-3)
     db.prepare(
-      "INSERT INTO oauth_tokens (access_token, refresh_token, client_id, user_id, scope, expires_at) VALUES (?, ?, ?, ?, ?, ?)"
+      "INSERT INTO oauth_tokens (access_token, refresh_token, client_id, user_id, scope, expires_at, is_attack_sim) VALUES (?, ?, ?, ?, ?, ?, 0)"
     ).run(accessToken, refreshToken, client_id, user.id, authCode.scope, expiresAt);
 
     trace.addCryptoOp({
@@ -208,8 +211,9 @@ oauthSimRoutes.post("/token", async (c) => {
 
   if (body.grant_type === "refresh_token") {
     const { refresh_token, client_id } = body;
+    // is_attack_sim=0 のみ対象 (E-3: 攻撃シミュレーションのトークンと混在しない)
     const tokenRow = db.prepare(
-      "SELECT access_token, refresh_token, client_id, user_id, scope, expires_at FROM oauth_tokens WHERE refresh_token = ? AND client_id = ?"
+      "SELECT access_token, refresh_token, client_id, user_id, scope, expires_at FROM oauth_tokens WHERE refresh_token = ? AND client_id = ? AND is_attack_sim = 0"
     ).get(refresh_token, client_id) as OAuthTokenRow | undefined;
 
     if (!tokenRow) {
@@ -228,9 +232,9 @@ oauthSimRoutes.post("/token", async (c) => {
     const newRefreshToken = uuidv4();
     const expiresAt = new Date(Date.now() + 3600 * 1000).toISOString();
 
-    db.prepare("DELETE FROM oauth_tokens WHERE refresh_token = ?").run(refresh_token);
+    db.prepare("DELETE FROM oauth_tokens WHERE refresh_token = ? AND is_attack_sim = 0").run(refresh_token);
     db.prepare(
-      "INSERT INTO oauth_tokens (access_token, refresh_token, client_id, user_id, scope, expires_at) VALUES (?, ?, ?, ?, ?, ?)"
+      "INSERT INTO oauth_tokens (access_token, refresh_token, client_id, user_id, scope, expires_at, is_attack_sim) VALUES (?, ?, ?, ?, ?, ?, 0)"
     ).run(newAccessToken, newRefreshToken, client_id, user.id, tokenRow.scope, expiresAt);
 
     return c.json({

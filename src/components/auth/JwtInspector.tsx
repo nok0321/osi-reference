@@ -332,12 +332,12 @@ export default function JwtInspector() {
         <AttackPanel
           tabId="jwt"
           scenarios={jwtScenarios}
-          onRunScenario={async (s, modeBody) => {
+          onRunScenario={async (s) => {
             const suffix = s.id.replace(/^jwt-/, "");
-            const body = modeBody ?? s.modes?.[0]?.body ?? {};
+            // E-2: 両モード並列実行のため body は不要 (空オブジェクト)
             const res = await apiPost<AttackResult>(
               `/api/jwt/attack/${suffix}`,
-              body,
+              {},
               "attack-jwt"
             );
             if (!res.data) {

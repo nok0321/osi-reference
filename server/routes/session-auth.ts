@@ -33,11 +33,12 @@ sessionAuthRoutes.post("/login", async (c) => {
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min
 
   const t1 = performance.now();
-  db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)").run(
+  // is_attack_sim=0 で正常系セッションを明示的に挿入
+  db.prepare("INSERT INTO sessions (id, user_id, expires_at, is_attack_sim) VALUES (?, ?, ?, 0)").run(
     sessionId, user.id, expiresAt
   );
   trace.addDbQuery({
-    sql: "INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)",
+    sql: "INSERT INTO sessions (id, user_id, expires_at, is_attack_sim) VALUES (?, ?, ?, 0)",
     params: [sessionId, user.id, expiresAt],
     ms: performance.now() - t1,
   });
@@ -89,11 +90,12 @@ sessionAuthRoutes.get("/profile", (c) => {
 
   const db = getDb();
   const t0 = performance.now();
+  // is_attack_sim=0 のみを参照 (E-3: 攻撃シミュレーションのレコードを誤参照しない)
   const session = db.prepare(
-    "SELECT s.*, u.username FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND s.expires_at > datetime('now')"
+    "SELECT s.*, u.username FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND s.expires_at > datetime('now') AND s.is_attack_sim = 0"
   ).get(sessionId) as SessionRow | undefined;
   trace.addDbQuery({
-    sql: "SELECT s.*, u.username FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND s.expires_at > datetime('now')",
+    sql: "SELECT s.*, u.username FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND s.expires_at > datetime('now') AND s.is_attack_sim = 0",
     params: [sessionId],
     rows: session ? [session] : [],
     ms: performance.now() - t0,
@@ -117,9 +119,10 @@ sessionAuthRoutes.delete("/logout", (c) => {
   const sessionId = getCookie(c, "session_id");
   if (sessionId) {
     const db = getDb();
-    db.prepare("DELETE FROM sessions WHERE id = ?").run(sessionId);
+    // is_attack_sim=0 の正常系セッションのみ削除 (E-3: 攻撃ログ用レコードを保護)
+    db.prepare("DELETE FROM sessions WHERE id = ? AND is_attack_sim = 0").run(sessionId);
     trace.addDbQuery({
-      sql: "DELETE FROM sessions WHERE id = ?",
+      sql: "DELETE FROM sessions WHERE id = ? AND is_attack_sim = 0",
       params: [sessionId],
       ms: 0,
     });
@@ -135,8 +138,9 @@ sessionAuthRoutes.get("/store", (c) => {
     return c.json({ success: false, error: "Debug endpoint disabled in production" }, 403);
   }
   const db = getDb();
+  // 正常系セッションのみを表示 (E-3: 攻撃シミュレーションのレコードは別経路で確認)
   const sessions = db.prepare(
-    "SELECT s.id, s.user_id, u.username, s.created_at, s.expires_at FROM sessions s JOIN users u ON s.user_id = u.id"
+    "SELECT s.id, s.user_id, u.username, s.created_at, s.expires_at FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.is_attack_sim = 0"
   ).all();
   return c.json({ success: true, data: { sessions } });
 });

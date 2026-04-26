@@ -13,10 +13,11 @@ import "./AttackPanel.css";
 interface AttackPanelProps {
   tabId: AuthSubView;
   scenarios: AttackScenarioMeta[];
-  onRunScenario: (
-    scenario: AttackScenarioMeta,
-    modeBody?: Record<string, unknown>,
-  ) => Promise<AttackResult>;
+  /**
+   * E-2: 攻撃ルートは 1 リクエストで両モード (脆弱+堅牢) を必ず並列実行する。
+   * 排他選択モードは廃止されたため、modeBody 引数は不要。
+   */
+  onRunScenario: (scenario: AttackScenarioMeta) => Promise<AttackResult>;
 }
 
 function AttackPanel(props: AttackPanelProps) {
@@ -28,7 +29,6 @@ function AttackPanel(props: AttackPanelProps) {
   const [attackResult, setAttackResult] = createSignal<AttackResult | null>(null);
   const [running, setRunning] = createSignal(false);
   const [defenseOpen, setDefenseOpen] = createSignal(false);
-  const [selectedModeId, setSelectedModeId] = createSignal<string>("");
 
   const selectedScenario = () =>
     props.scenarios.find((s) => s.id === selectedId()) ?? props.scenarios[0] ?? null;
@@ -39,20 +39,6 @@ function AttackPanel(props: AttackPanelProps) {
     const current = selectedId();
     if (scenarios.length > 0 && (!current || !scenarios.some(s => s.id === current))) {
       setSelectedId(scenarios[0].id);
-    }
-  });
-
-  /* シナリオ変更時に selectedModeId を最初のモード ID にリセット */
-  createEffect(() => {
-    const scenario = selectedScenario();
-    const modes = scenario?.modes;
-    if (modes && modes.length > 0) {
-      const current = selectedModeId();
-      if (!current || !modes.some((m) => m.id === current)) {
-        setSelectedModeId(modes[0].id);
-      }
-    } else {
-      setSelectedModeId("");
     }
   });
 
@@ -67,12 +53,11 @@ function AttackPanel(props: AttackPanelProps) {
   async function handleRunAttack() {
     const scenario = selectedScenario();
     if (!scenario || running()) return;
-    const mode = (scenario.modes ?? []).find((m) => m.id === selectedModeId());
     setRunning(true);
     setAttackResult(null);
     setDefenseOpen(false);
     try {
-      const result = await props.onRunScenario(scenario, mode?.body);
+      const result = await props.onRunScenario(scenario);
       setAttackResult(result);
     } finally {
       setRunning(false);
@@ -92,24 +77,21 @@ function AttackPanel(props: AttackPanelProps) {
           onSelect={setSelectedId}
         />
 
-        {/* 3. モードトグル (シナリオに modes が定義されている場合のみ) */}
+        {/* 3. 並列モードラベル表示 (E-2: 排他選択ではなく両モードを表示するためのラベル) */}
         <Show when={(selectedScenario()?.modes ?? []).length > 0}>
           <div
-            class="attack-mode-toggle"
+            class="attack-mode-labels"
             role="group"
-            aria-label={t("攻撃モード", "Attack mode")}
+            aria-label={t("攻撃モード (両方並列実行)", "Attack modes (run in parallel)")}
           >
             <For each={selectedScenario()!.modes!}>
               {(mode) => (
-                <button
-                  class="attack-mode-btn"
+                <span
+                  class="attack-mode-label"
                   data-kind={mode.kind}
-                  data-active={selectedModeId() === mode.id}
-                  aria-pressed={selectedModeId() === mode.id}
-                  onClick={() => setSelectedModeId(mode.id)}
                 >
                   {t(mode.labelJa, mode.label)}
-                </button>
+                </span>
               )}
             </For>
           </div>

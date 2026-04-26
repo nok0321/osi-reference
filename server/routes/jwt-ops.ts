@@ -12,6 +12,11 @@
  * 対象 CWE: CWE-345 (alg=none), CWE-326 (weak secret), CWE-347 (signature stripping), CWE-22 (kid injection)
  * 対象 CAPEC: CAPEC-49, CAPEC-88, CAPEC-196
  * 関連設計書: DESIGN/04-safety-guardrails.md, DESIGN/11-attack-jwt.md
+ *
+ * E-2: 各攻撃シナリオは 1 リクエストで 5 ステップ完全形 (probe → tamper → forge → exploit → verify) を実行し、
+ *      ステップ 4 (exploit) で脆弱モード結果、ステップ 5 (verify) で堅牢モード結果を返す。
+ *      両モード並列実行のため、リクエスト body にモード選択フィールドはなく、outcome は常に "succeeded" を返す
+ *      (脆弱側で攻撃成立 + 堅牢側で防御発動の両方を 5 ステップで示すため)。
  */
 import { Hono } from "hono";
 import jwt from "jsonwebtoken";
@@ -133,6 +138,11 @@ jwtOpsRoutes.post("/decode", async (c) => {
 });
 
 jwtOpsRoutes.get("/keys", (c) => {
+  // 教材用に秘密鍵を表示するエンドポイントだが、本番環境では絶対に公開しない (SEC FINDING-2 対応)。
+  // 秘密鍵漏洩は weak-secret-bruteforce 攻撃シナリオの「強い秘密鍵が辞書に含まれない」前提を破壊する。
+  if (process.env.NODE_ENV === "production") {
+    return c.json({ success: false, error: "Key disclosure endpoint disabled in production" }, 403);
+  }
   return c.json({
     success: true,
     data: {
@@ -167,11 +177,10 @@ const COMMON_DICT = [
   "production", "staging", "development", "secure",
 ];
 
-// ── Scenario A: alg=none 攻撃 ──
+// ── Scenario A: alg=none 攻撃 (5 ステップ完全形 + 両モード並列実行) ──
 jwtOpsRoutes.post("/attack/alg-none", async (c) => {
   const parsed = await parseBody(c, jwtAttackAlgNoneSchema);
   if ("error" in parsed) return parsed.error;
-  const { victim } = parsed.data;
 
   const trace = c.get("trace");
   const startedAt = Date.now();
@@ -179,16 +188,21 @@ jwtOpsRoutes.post("/attack/alg-none", async (c) => {
   const tabId = "jwt";
 
   const db = getDb();
-  const logId = insertAttackLog(db, { scenarioId, tabId });
+  // ROB-FIND-008: insertAttackLog 失敗時も二重例外保護パターンが機能するよう、
+  // logId は let で宣言し try ブロック内で代入する。catch では logId !== undefined で保護。
+  let logId: number | undefined;
   const stepsCollected: AttackStep[] = [];
 
   const recordStep = (step: Omit<AttackStep, "timestamp">) => {
-    trace.addAttackStep(step);
-    stepsCollected.push({ ...step, timestamp: Date.now() });
+    // ROB-FIND-009: timestamp を 1 度だけ計算し、_trace.attackSteps と data.steps で共有
+    const stamped: AttackStep = { ...step, timestamp: Date.now() };
+    trace.addAttackStep(stamped);
+    stepsCollected.push(stamped);
   };
 
   try {
-    // Step 1: 元 JWT ヘッダをデコード
+    logId = insertAttackLog(db, { scenarioId, tabId });
+    // ── Step 1: probe — 元 JWT ヘッダをデコード ──
     recordStep({
       id: "alg-none-1",
       kind: "probe",
@@ -212,17 +226,22 @@ jwtOpsRoutes.post("/attack/alg-none", async (c) => {
       algo: "base64url",
     });
 
-    // Step 2: alg=none に書き換え + role admin 昇格
+    // ── Step 2: tamper — alg=none に書き換え + role admin 昇格 ──
     const forgedHeader = { alg: "none", typ: "JWT" };
     const forgedPayload = { ...SEED_ALICE_PAYLOAD, role: "admin" };
     const forgedHeaderB64 = Buffer.from(JSON.stringify(forgedHeader)).toString("base64url");
     const forgedPayloadB64 = Buffer.from(JSON.stringify(forgedPayload)).toString("base64url");
-    const forgedToken = `${forgedHeaderB64}.${forgedPayloadB64}.`;
 
     trace.addCryptoOp({
       op: "base64url.encode(forged-header)",
       input: JSON.stringify(forgedHeader),
       output: forgedHeaderB64,
+      algo: "base64url",
+    });
+    trace.addCryptoOp({
+      op: "base64url.encode(forged-payload)",
+      input: JSON.stringify(forgedPayload),
+      output: forgedPayloadB64,
       algo: "base64url",
     });
 
@@ -240,12 +259,14 @@ jwtOpsRoutes.post("/attack/alg-none", async (c) => {
       },
     });
 
-    // Step 3: 署名セグメント削除
+    // ── Step 3: forge — 署名セグメント削除 (末尾ドットを維持) ──
+    const forgedToken = `${forgedHeaderB64}.${forgedPayloadB64}.`;
+
     recordStep({
       id: "alg-none-3",
       kind: "forge",
-      label: "Drop signature segment",
-      labelJa: "署名セグメントを削除",
+      label: "Drop signature segment (keep trailing dot)",
+      labelJa: "署名セグメントを削除 (末尾ドットを維持)",
       status: "success",
       payload: {
         type: "token",
@@ -254,172 +275,187 @@ jwtOpsRoutes.post("/attack/alg-none", async (c) => {
         signatureValid: false,
       },
       detailJa: "alg=none トークンは空の署名セグメントが必要です。末尾のドットは JWT 仕様で必須です。",
-      detail: "alg=none tokens must have an empty signature.",
+      detail: "alg=none tokens must have an empty signature. The trailing dot is required by the JWT spec.",
     });
 
-    let outcome: AttackResult["outcome"];
-    let blockedBy: string | undefined;
-    let summaryJa: string;
-    let summary: string;
+    // ── Step 4: exploit — 偽造トークンを脆弱検証エンドポイントに送信 (lenient mode) ──
+    // 脆弱モード: 自前で alg=none を許容して payload を返す (algorithms 省略を再現)
+    const [, lenientPart] = forgedToken.split(".");
+    const lenientDecoded = JSON.parse(Buffer.from(lenientPart, "base64url").toString("utf8"));
 
-    if (!victim.strict) {
-      // 脆弱モード: 自前で alg=none を許容して payload を返す
-      const [, pPart] = forgedToken.split(".");
-      const decodedPayload = JSON.parse(Buffer.from(pPart, "base64url").toString("utf8"));
+    trace.addCryptoOp({
+      op: "jwt.verify(lenient)",
+      input: forgedToken.substring(0, 40) + "...",
+      output: "ACCEPTED (algorithms option omitted, alg=none received)",
+      algo: "none",
+      detail: "Lenient verifier accepts alg=none when algorithms option is missing",
+    });
 
-      trace.addCryptoOp({
-        op: "jwt.verify(lenient)",
-        input: forgedToken.substring(0, 40) + "...",
-        output: "ACCEPTED (algorithms option omitted, alg=none received)",
-        algo: "none",
-        detail: "Lenient verifier accepts alg=none when algorithms option is missing",
-      });
+    recordStep({
+      id: "alg-none-4",
+      kind: "exploit",
+      label: "Send forged token to lenient verifier",
+      labelJa: "偽造トークンを脆弱検証エンドポイントに送信",
+      status: "success",
+      payload: {
+        type: "http",
+        request: { method: "POST", url: "/api/jwt/attack/alg-none" },
+        response: { status: 200, body: { decoded: lenientDecoded, accepted: true } },
+      },
+      detailJa: "脆弱なエンドポイントは algorithms オプションなしで jwt.verify() を呼ぶため、alg=none を受け入れます。",
+      detail: "The lenient endpoint calls jwt.verify() without specifying algorithms, accepting alg=none.",
+    });
 
-      recordStep({
-        id: "alg-none-4",
-        kind: "exploit",
-        label: "Send forged token to lenient verifier",
-        labelJa: "偽造トークンを脆弱検証エンドポイントに送信",
-        status: "success",
-        payload: {
-          type: "http",
-          request: { method: "POST", url: "/api/jwt/attack/alg-none", body: { mode: "lenient" } },
-          response: { status: 200, body: { decoded: decodedPayload } },
-        },
-      });
-
-      outcome = "succeeded";
-      summaryJa = "この実装は脆弱です: algorithms 省略により alg=none が受理されました。";
-      summary = "This implementation is vulnerable: alg=none accepted due to missing algorithms option.";
-    } else {
-      // 堅牢モード: jsonwebtoken の verify with algorithms allowlist
-      let errorMessage = "invalid algorithm";
-      try {
-        jwt.verify(forgedToken, HS256_SECRET, { algorithms: ALLOWED_ALGORITHMS });
-      } catch (err) {
-        errorMessage = err instanceof Error ? err.message : "verification failed";
-      }
-
-      trace.addCryptoOp({
-        op: "jwt.verify(strict)",
-        input: forgedToken.substring(0, 40) + "...",
-        output: `REJECTED (${errorMessage})`,
-        algo: "HS256",
-        detail: "Strict verifier rejects alg=none via algorithms allowlist",
-      });
-
-      recordStep({
-        id: "alg-none-5",
-        kind: "verify",
-        label: "Send forged token to strict verifier",
-        labelJa: "偽造トークンを堅牢検証エンドポイントに送信",
-        status: "blocked",
-        payload: {
-          type: "http",
-          request: { method: "POST", url: "/api/jwt/attack/alg-none", body: { mode: "strict" } },
-          response: { status: 401, body: { error: errorMessage, blockedBy: "jwt_algorithms_allowlist" } },
-        },
-      });
-
-      outcome = "blocked";
-      blockedBy = "jwt_algorithms_allowlist";
-      summaryJa = "防御が機能しました: algorithms 許可リストが alg=none を拒否しました。";
-      summary = "Defense worked: algorithms allowlist rejected alg=none.";
+    // ── Step 5: verify — 同じ偽造トークンを堅牢検証エンドポイントに送信 (strict mode) ──
+    let strictError = "invalid algorithm";
+    try {
+      jwt.verify(forgedToken, HS256_SECRET, { algorithms: ALLOWED_ALGORITHMS });
+    } catch (err) {
+      strictError = err instanceof Error ? err.message : "verification failed";
     }
+
+    trace.addCryptoOp({
+      op: "jwt.verify(strict)",
+      input: forgedToken.substring(0, 40) + "...",
+      output: `REJECTED (${strictError})`,
+      algo: "HS256",
+      detail: "Strict verifier rejects alg=none via algorithms allowlist",
+    });
+
+    recordStep({
+      id: "alg-none-5",
+      kind: "verify",
+      label: "Send same forged token to strict verifier",
+      labelJa: "同じ偽造トークンを堅牢検証エンドポイントに送信",
+      status: "blocked",
+      payload: {
+        type: "http",
+        request: { method: "POST", url: "/api/jwt/attack/alg-none" },
+        response: { status: 401, body: { error: strictError, blockedBy: "jwt_algorithms_allowlist" } },
+      },
+      detailJa: "堅牢なエンドポイントは jwt.verify() に { algorithms: ['HS256', 'RS256'] } を渡し、none を拒否します。",
+      detail: "The strict endpoint passes { algorithms: ['HS256', 'RS256'] } to jwt.verify(), rejecting none.",
+    });
 
     const finishedAt = Date.now();
     const result: AttackResult = {
       scenarioId,
-      outcome,
+      outcome: "succeeded",
       startedAt,
       finishedAt,
       steps: stepsCollected,
-      blockedBy,
-      summary,
-      summaryJa,
+      blockedBy: "jwt_algorithms_allowlist",
+      summary: "Lenient verifier accepted alg=none (vulnerable). Strict verifier with algorithms allowlist rejected it (defense worked).",
+      summaryJa: "脆弱検証は alg=none を受理しましたが、algorithms 許可リストを指定した堅牢検証は拒否しました。",
       logId,
     };
 
     finalizeAttackLog(db, logId, {
-      success: outcome === "succeeded",
-      blockedBy,
+      success: true,
+      blockedBy: "jwt_algorithms_allowlist",
       stepsJson: JSON.stringify(stepsCollected),
-      payloadJson: JSON.stringify({ victim, forgedToken }),
+      payloadJson: JSON.stringify({ forgedToken, strictError }),
     });
 
-    const status = outcome === "blocked" ? 401 : 200;
-    return c.json({ success: true, data: result }, status);
+    return c.json({ success: true, data: result }, 200);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
-    try {
-      finalizeAttackLog(db, logId, {
-        success: false,
-        stepsJson: JSON.stringify(stepsCollected),
-        payloadJson: JSON.stringify({ error: errorMessage }),
-      });
-    } catch {
-      // finalize 失敗時は握り潰す (二重例外回避)
+    // ROB-FIND-008: insertAttackLog 自体が失敗していた場合は logId が undefined のため finalize をスキップ
+    if (logId !== undefined) {
+      try {
+        finalizeAttackLog(db, logId, {
+          success: false,
+          stepsJson: JSON.stringify(stepsCollected),
+          payloadJson: JSON.stringify({ error: errorMessage }),
+        });
+      } catch {
+        // finalize 失敗時は握り潰す (二重例外回避)
+      }
     }
     return c.json({ success: false, error: errorMessage, data: { scenarioId, outcome: "error", startedAt, finishedAt: Date.now(), steps: stepsCollected, logId } }, 500);
   }
 });
 
-// ── Scenario B: HS256 弱秘密鍵ブルートフォース ──
+// ── Scenario B: HS256 弱秘密鍵ブルートフォース (5 ステップ完全形 + 両モード並列実行) ──
 jwtOpsRoutes.post("/attack/weak-secret-bruteforce", async (c) => {
   const parsed = await parseBody(c, jwtAttackWeakSecretSchema);
   if ("error" in parsed) return parsed.error;
-  const { secretType, dictionarySize } = parsed.data;
+  const { dictionarySize } = parsed.data;
 
   const trace = c.get("trace");
   const startedAt = Date.now();
   const scenarioId = "jwt-weak-secret-bruteforce";
   const tabId = "jwt";
   const db = getDb();
-  const logId = insertAttackLog(db, { scenarioId, tabId });
+  // ROB-FIND-008: insertAttackLog 失敗時も二重例外保護パターンが機能するよう、
+  // logId は let で宣言し try ブロック内で代入する。catch では logId !== undefined で保護。
+  let logId: number | undefined;
   const stepsCollected: AttackStep[] = [];
   const recordStep = (s: Omit<AttackStep, "timestamp">) => {
-    trace.addAttackStep(s);
-    stepsCollected.push({ ...s, timestamp: Date.now() });
+    // ROB-FIND-009: timestamp を 1 度だけ計算し、_trace.attackSteps と data.steps で共有
+    const stamped: AttackStep = { ...s, timestamp: Date.now() };
+    trace.addAttackStep(stamped);
+    stepsCollected.push(stamped);
   };
 
   try {
-    // 攻撃対象トークンを生成 (弱 / 強 で異なる秘密鍵で署名)
-    const targetSecret = secretType === "weak" ? "secret" : HS256_SECRET;
-    const tokenPayload = { sub: "seed_alice", role: "admin", iat: Math.floor(Date.now() / 1000) };
-    const targetToken = jwt.sign(tokenPayload, targetSecret, { algorithm: "HS256" });
+    logId = insertAttackLog(db, { scenarioId, tabId });
+    const candidates = COMMON_DICT.slice(0, dictionarySize);
 
-    // Step 1: トークンキャプチャ
+    // 弱トークン (秘密鍵 = "secret"、辞書 1 件目で発見される) と強トークン (HS256_SECRET) を両方生成
+    const weakSecret = "secret";
+    const strongSecret = HS256_SECRET;
+    const tokenPayload = { sub: "seed_alice", role: "admin", iat: Math.floor(Date.now() / 1000) };
+    const weakToken = jwt.sign(tokenPayload, weakSecret, { algorithm: "HS256" });
+    const strongToken = jwt.sign(tokenPayload, strongSecret, { algorithm: "HS256" });
+
+    // ── Step 1: intercept — 攻撃対象トークンを入手 ──
     recordStep({
       id: "brute-1",
       kind: "intercept",
       label: "Capture HS256 JWT token",
       labelJa: "HS256 JWT トークンを入手",
       status: "success",
-      payload: { type: "token", before: targetToken.substring(0, 40) + "...", algo: "HS256" },
+      payload: {
+        type: "token",
+        before: weakToken.substring(0, 40) + "...",
+        algo: "HS256",
+        decodedHeader: { alg: "HS256", typ: "JWT" },
+        decodedPayload: tokenPayload,
+      },
+      detailJa: "攻撃者は HS256 署名済みトークンを入手します。署名入力 (header.payload) は公開情報です。",
+      detail: "Attacker obtains a signed HS256 token. Signing input is public (header.payload).",
     });
 
-    // Step 2: 辞書攻撃開始
+    // ── Step 2: probe — オフライン辞書攻撃を開始 ──
     recordStep({
       id: "brute-2",
       kind: "probe",
-      label: "Begin offline dictionary attack",
-      labelJa: "オフライン辞書攻撃を開始",
+      label: `Begin offline dictionary attack (${candidates.length} candidates)`,
+      labelJa: `オフライン辞書攻撃を開始 (${candidates.length} 候補)`,
       status: "success",
-      payload: { type: "generic", data: { totalCandidates: dictionarySize, targetAlgo: "HMAC-SHA256", serverConnectionRequired: false } },
+      payload: {
+        type: "generic",
+        data: {
+          dictionary: candidates.slice(0, 10),
+          totalCandidates: candidates.length,
+          targetAlgo: "HMAC-SHA256",
+          serverConnectionRequired: false,
+        },
+      },
       detail: "HMAC-SHA256 can be computed locally. No server requests needed.",
       detailJa: "HMAC-SHA256 はローカルで計算できます。サーバーへのリクエストは不要です。",
     });
 
-    // 辞書ループ (サーバー側で実行)
-    const candidates = COMMON_DICT.slice(0, dictionarySize);
+    // ── Step 3: exploit — 弱秘密鍵側で辞書ループ実行 → 一致発見 ──
     let crackedSecret: string | null = null;
-    let attemptCount = 0;
+    let weakAttemptCount = 0;
     const triedPasswords: string[] = [];
     for (const candidate of candidates) {
-      attemptCount++;
+      weakAttemptCount++;
       triedPasswords.push(candidate);
       try {
-        jwt.verify(targetToken, candidate, { algorithms: ALLOWED_ALGORITHMS });
+        jwt.verify(weakToken, candidate, { algorithms: ALLOWED_ALGORITHMS });
         crackedSecret = candidate;
         break;
       } catch {
@@ -428,37 +464,36 @@ jwtOpsRoutes.post("/attack/weak-secret-bruteforce", async (c) => {
     }
 
     trace.addCryptoOp({
-      op: `HMAC-SHA256 dictionary trial (${attemptCount} attempts)`,
-      input: `target=${targetToken.substring(0, 30)}..., dict=${candidates.length} candidates`,
-      output: crackedSecret ? `MATCH: "${crackedSecret}" at attempt ${attemptCount}` : `NO MATCH (${attemptCount} attempts)`,
+      op: `HMAC-SHA256 dictionary trial (weak target, ${weakAttemptCount} attempts)`,
+      input: `target=${weakToken.substring(0, 30)}..., dict=${candidates.length} candidates`,
+      output: crackedSecret ? `MATCH: "${crackedSecret}" at attempt ${weakAttemptCount}` : `NO MATCH`,
       algo: "HMAC-SHA256",
     });
 
-    let outcome: AttackResult["outcome"];
-    let blockedBy: string | undefined;
-    let summaryJa: string;
-    let summary: string;
+    recordStep({
+      id: "brute-3",
+      kind: "exploit",
+      label: "Match found: weak secret cracked",
+      labelJa: "一致発見: 弱い秘密鍵がクラックされました",
+      status: "success",
+      payload: {
+        type: "credential",
+        crackedPassword: crackedSecret ?? undefined,
+        triedPasswords: triedPasswords.slice(0, Math.min(triedPasswords.length, 10)),
+      },
+      detailJa: `HMAC-SHA256(header.payload, '${crackedSecret}') がトークン署名と一致しました (${weakAttemptCount} 件目)。`,
+      detail: `HMAC-SHA256(header.payload, '${crackedSecret}') matches the token signature at attempt ${weakAttemptCount}.`,
+    });
 
+    // ── Step 4: forge — クラックした秘密鍵で偽造トークン署名 (脆弱モード結果、status: "success") ──
+    let forgedAdminToken = "";
     if (crackedSecret) {
-      // Step 3: マッチ発見
-      recordStep({
-        id: "brute-3",
-        kind: "exploit",
-        label: "Match found: weak secret cracked",
-        labelJa: "一致発見: 弱い秘密鍵がクラックされました",
-        status: "success",
-        payload: { type: "credential", crackedPassword: crackedSecret, triedPasswords: triedPasswords.slice(0, Math.min(triedPasswords.length, 10)) },
-        detailJa: `HMAC-SHA256(header.payload, '${crackedSecret}') がトークン署名と一致しました。`,
-        detail: `HMAC-SHA256(header.payload, '${crackedSecret}') matches the token signature.`,
-      });
-
-      // Step 4: 偽造トークン署名
-      const forgedPayload = { sub: "attacker_charlie", role: "admin" };
-      const forgedToken = jwt.sign(forgedPayload, crackedSecret, { algorithm: "HS256" });
+      const adminPayload = { sub: "attacker_charlie", role: "admin" };
+      forgedAdminToken = jwt.sign(adminPayload, crackedSecret, { algorithm: "HS256" });
       trace.addCryptoOp({
         op: "jwt.sign(forgedPayload, crackedSecret)",
-        input: JSON.stringify(forgedPayload),
-        output: forgedToken.substring(0, 40) + "...",
+        input: JSON.stringify(adminPayload),
+        output: forgedAdminToken.substring(0, 40) + "...",
         algo: "HS256",
       });
       recordStep({
@@ -467,91 +502,160 @@ jwtOpsRoutes.post("/attack/weak-secret-bruteforce", async (c) => {
         label: "Re-sign token with cracked secret (role=admin)",
         labelJa: "クラックした秘密鍵で新規トークン署名 (role=admin)",
         status: "success",
-        payload: { type: "token", after: forgedToken.substring(0, 40) + "...", algo: "HS256", decodedPayload: forgedPayload, signatureValid: true },
+        payload: {
+          type: "token",
+          after: forgedAdminToken.substring(0, 40) + "...",
+          algo: "HS256",
+          decodedPayload: adminPayload,
+          signatureValid: true,
+        },
+        detailJa: "秘密鍵が判明すれば、任意のペイロードで有効な署名を生成できます。",
+        detail: "With the secret known, attacker can forge any payload with a valid signature.",
       });
-
-      outcome = "succeeded";
-      summaryJa = `この実装は脆弱です: 秘密鍵 "${crackedSecret}" は辞書 ${attemptCount} 件目で発見されました。`;
-      summary = `This implementation is vulnerable: secret "${crackedSecret}" found at dictionary attempt ${attemptCount}.`;
     } else {
-      // Step 5: 全候補失敗
+      // 通常はここに到達しない (辞書 1 件目で発見されるため) が、セーフティとして記録
       recordStep({
-        id: "brute-5",
-        kind: "verify",
-        label: "Strong random secret resists dictionary",
-        labelJa: "十分なランダム秘密鍵では辞書が通用しない",
-        status: "blocked",
-        payload: { type: "generic", data: { strongSecretLength: targetSecret.length, triedCandidates: attemptCount, matched: 0 } },
+        id: "brute-4",
+        kind: "forge",
+        label: "Forge step skipped (no secret cracked)",
+        labelJa: "偽造ステップをスキップ (秘密鍵未発見)",
+        status: "failed",
+        payload: { type: "generic", data: { reason: "Weak secret not in dictionary" } },
       });
-      outcome = "blocked";
-      blockedBy = "strong_random_secret";
-      summaryJa = "防御が機能しました: 十分な長さのランダム秘密鍵はブルートフォースに耐性があります。";
-      summary = "Defense worked: strong random secret resists brute force.";
     }
 
-    const finishedAt = Date.now();
-    const result: AttackResult = { scenarioId, outcome, startedAt, finishedAt, steps: stepsCollected, blockedBy, summary, summaryJa, logId };
-    const extraData = { crackedSecret, attemptCount };
+    // ── Step 5: verify — 強秘密鍵側で辞書ループ実行 → 全候補失敗 (堅牢モード結果、status: "blocked") ──
+    let strongAttemptCount = 0;
+    let strongCracked: string | null = null;
+    for (const candidate of candidates) {
+      strongAttemptCount++;
+      try {
+        jwt.verify(strongToken, candidate, { algorithms: ALLOWED_ALGORITHMS });
+        strongCracked = candidate;
+        break;
+      } catch {
+        // 不一致、続行
+      }
+    }
 
-    finalizeAttackLog(db, logId, {
-      success: outcome === "succeeded",
-      blockedBy,
-      stepsJson: JSON.stringify(stepsCollected),
-      payloadJson: JSON.stringify({ secretType, dictionarySize, ...extraData }),
+    trace.addCryptoOp({
+      op: `HMAC-SHA256 dictionary trial (strong target, ${strongAttemptCount} attempts)`,
+      input: `target=${strongToken.substring(0, 30)}..., dict=${candidates.length} candidates`,
+      output: strongCracked ? `MATCH: "${strongCracked}"` : `NO MATCH (${strongAttemptCount} attempts)`,
+      algo: "HMAC-SHA256",
     });
 
-    const status = outcome === "blocked" ? 401 : 200;
-    return c.json({ success: true, data: { ...result, ...extraData } }, status);
+    recordStep({
+      id: "brute-5",
+      kind: "verify",
+      label: `Strong random secret resists dictionary (all ${strongAttemptCount} fail)`,
+      labelJa: `十分なランダム秘密鍵では辞書が通用しない (${strongAttemptCount} 件全て失敗)`,
+      status: "blocked",
+      payload: {
+        type: "generic",
+        data: {
+          strongSecretLength: strongSecret.length,
+          triedCandidates: strongAttemptCount,
+          matched: strongCracked ? 1 : 0,
+        },
+      },
+      detailJa: `${strongSecret.length} 文字のランダム文字列はいかなる辞書にも含まれません。ブルートフォースは失敗します。`,
+      detail: `A ${strongSecret.length}-char random secret is not in any dictionary. Brute force fails.`,
+    });
+
+    const finishedAt = Date.now();
+    const extra = { crackedSecret, attemptCount: weakAttemptCount };
+    const result: AttackResult<typeof extra> = {
+      scenarioId,
+      outcome: "succeeded",
+      startedAt,
+      finishedAt,
+      steps: stepsCollected,
+      blockedBy: "strong_random_secret",
+      summary: `Weak secret cracked at attempt ${weakAttemptCount} (vulnerable). Strong ${strongSecret.length}-char random secret resisted all ${strongAttemptCount} attempts (defense worked).`,
+      summaryJa: `弱秘密鍵は ${weakAttemptCount} 件目でクラックされましたが、${strongSecret.length} 文字のランダム秘密鍵は ${strongAttemptCount} 件全てに耐えました。`,
+      logId,
+      extra,
+    };
+
+    finalizeAttackLog(db, logId, {
+      success: true,
+      blockedBy: "strong_random_secret",
+      stepsJson: JSON.stringify(stepsCollected),
+      payloadJson: JSON.stringify({ dictionarySize, weakAttemptCount, strongAttemptCount, crackedSecret }),
+    });
+
+    return c.json({ success: true, data: result }, 200);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
-    try {
-      finalizeAttackLog(db, logId, {
-        success: false,
-        stepsJson: JSON.stringify(stepsCollected),
-        payloadJson: JSON.stringify({ error: errorMessage }),
-      });
-    } catch {
-      // finalize 失敗時は握り潰す (二重例外回避)
+    // ROB-FIND-008: insertAttackLog 自体が失敗していた場合は logId が undefined のため finalize をスキップ
+    if (logId !== undefined) {
+      try {
+        finalizeAttackLog(db, logId, {
+          success: false,
+          stepsJson: JSON.stringify(stepsCollected),
+          payloadJson: JSON.stringify({ error: errorMessage }),
+        });
+      } catch {
+        // finalize 失敗時は握り潰す (二重例外回避)
+      }
     }
     return c.json({ success: false, error: errorMessage, data: { scenarioId, outcome: "error", startedAt, finishedAt: Date.now(), steps: stepsCollected, logId } }, 500);
   }
 });
 
-// ── Scenario C: 署名ストリッピング ──
+// ── Scenario C: 署名ストリッピング (5 ステップ完全形 + 両モード並列実行) ──
 jwtOpsRoutes.post("/attack/signature-stripping", async (c) => {
   const parsed = await parseBody(c, jwtAttackSignatureStrippingSchema);
   if ("error" in parsed) return parsed.error;
-  const { forgedToken: reqToken, mode } = parsed.data;
+  const { forgedToken: reqToken } = parsed.data;
 
   const trace = c.get("trace");
   const startedAt = Date.now();
   const scenarioId = "jwt-signature-stripping";
   const tabId = "jwt";
   const db = getDb();
-  const logId = insertAttackLog(db, { scenarioId, tabId });
+  // ROB-FIND-008: insertAttackLog 失敗時も二重例外保護パターンが機能するよう、
+  // logId は let で宣言し try ブロック内で代入する。catch では logId !== undefined で保護。
+  let logId: number | undefined;
   const stepsCollected: AttackStep[] = [];
   const recordStep = (s: Omit<AttackStep, "timestamp">) => {
-    trace.addAttackStep(s);
-    stepsCollected.push({ ...s, timestamp: Date.now() });
+    // ROB-FIND-009: timestamp を 1 度だけ計算し、_trace.attackSteps と data.steps で共有
+    const stamped: AttackStep = { ...s, timestamp: Date.now() };
+    trace.addAttackStep(stamped);
+    stepsCollected.push(stamped);
   };
 
   try {
+    logId = insertAttackLog(db, { scenarioId, tabId });
     const forgedHeaderB64 = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
-    const forgedPayloadB64 = Buffer.from(JSON.stringify({ sub: "attacker_charlie", role: "admin", iat: 1714000000 })).toString("base64url");
+    const forgedPayload = { sub: "attacker_charlie", role: "admin", iat: 1714000000 };
+    const forgedPayloadB64 = Buffer.from(JSON.stringify(forgedPayload)).toString("base64url");
     const forgedToken = reqToken ?? `${forgedHeaderB64}.${forgedPayloadB64}.INVALID_SIGNATURE_PLACEHOLDER`;
 
-    const realDecoded = jwt.decode(forgedToken, { complete: true });
-    trace.addCryptoOp({
-      op: "base64url.decode(header+payload)",
-      input: forgedToken.substring(0, 40) + "...",
-      output: realDecoded ? JSON.stringify(realDecoded) : "(decode failed)",
-      algo: "base64url",
-    });
-
-    // Step 1: 偽造トークン作成
+    // ── Step 1: probe — ターゲット調査 (jwt.decode() のみで verify を省略しているコード) ──
     recordStep({
       id: "strip-1",
       kind: "probe",
+      label: "Inspect target: uses jwt.decode() without verify",
+      labelJa: "ターゲット調査: jwt.decode() のみで verify を省略",
+      status: "success",
+      payload: {
+        type: "generic",
+        data: {
+          vulnerableCode: "const user = jwt.decode(token); // verify() を呼ばずに信頼",
+          secureCode: "const user = jwt.verify(token, secret, { algorithms: ['HS256'] });",
+          antipatternReason: "decode() はヘッダ/ペイロードを Base64url 復号するだけで署名を検証しない",
+        },
+      },
+      detailJa: "jwt.decode() はデコードのみで、署名を一切検証しません。任意の偽造トークンが通過します。",
+      detail: "jwt.decode() only decodes — it never checks the signature. Any forged token passes.",
+    });
+
+    // ── Step 2: tamper — 改竄 (有効なヘッダ+ペイロード、無効な署名) ──
+    recordStep({
+      id: "strip-2",
+      kind: "tamper",
       label: "Craft token with valid header+payload but invalid signature",
       labelJa: "有効なヘッダ+ペイロードを持つが署名が無効なトークンを作成",
       status: "success",
@@ -559,7 +663,7 @@ jwtOpsRoutes.post("/attack/signature-stripping", async (c) => {
         type: "token",
         before: forgedToken.substring(0, 40) + "...",
         decodedHeader: { alg: "HS256", typ: "JWT" },
-        decodedPayload: { sub: "attacker_charlie", role: "admin", iat: 1714000000 },
+        decodedPayload: forgedPayload,
         algo: "HS256",
         signatureValid: false,
       },
@@ -567,9 +671,9 @@ jwtOpsRoutes.post("/attack/signature-stripping", async (c) => {
       detailJa: "トークンは有効な構造ですが、署名セグメントは偽造されています。",
     });
 
-    // Step 2: 偽造
+    // ── Step 3: forge — 任意のバイト列で署名を置き換え ──
     recordStep({
-      id: "strip-2",
+      id: "strip-3",
       kind: "forge",
       label: "Replace signature with arbitrary bytes",
       labelJa: "署名を任意のバイト列で置き換え",
@@ -584,127 +688,157 @@ jwtOpsRoutes.post("/attack/signature-stripping", async (c) => {
       detailJa: "偽造トークンは構造的に有効に見えますが、署名が無効です。",
     });
 
-    let outcome: AttackResult["outcome"];
-    let blockedBy: string | undefined;
-    let summaryJa: string;
-    let summary: string;
+    // ── Step 4: exploit — decode-only エンドポイントが署名未検証でペイロードを返す (脆弱モード) ──
+    // ROB-FIND-003: jwt.decode() は壊れたトークン (Base64url 不正・ピリオド数不一致) で null を返す。
+    // null の場合は教育的整合性のため "failed" ステップとして記録し、誤って "success" と表示しない。
+    const lenientDecoded = jwt.decode(forgedToken, { complete: true });
 
-    if (mode === "decode-only") {
-      // 脆弱モード: jwt.decode() のみ (署名検証なし)
-      const decoded = jwt.decode(forgedToken, { complete: true });
-
+    if (lenientDecoded === null) {
       trace.addCryptoOp({
         op: "jwt.decode(token) — no verification",
         input: forgedToken.substring(0, 40) + "...",
-        output: `DECODED (no signature check): ${JSON.stringify(decoded?.payload).substring(0, 60)}...`,
+        output: "DECODE FAILED (malformed token structure)",
+        algo: "none",
+        detail: "jwt.decode() returned null — token is structurally invalid.",
+      });
+      recordStep({
+        id: "strip-4",
+        kind: "exploit",
+        label: "decode-only endpoint cannot decode malformed token",
+        labelJa: "decode-only エンドポイントが壊れたトークンをデコードできない",
+        status: "failed",
+        payload: {
+          type: "generic",
+          data: { reason: "Malformed token: jwt.decode() returned null" },
+        },
+        detailJa: "提供されたトークンは構造的に無効なため、decode-only エンドポイントでもペイロードを取得できません。",
+        detail: "The provided token is structurally invalid — even decode-only cannot extract a payload.",
+      });
+    } else {
+      const payloadPreview = JSON.stringify(lenientDecoded.payload ?? {}).substring(0, 60);
+      trace.addCryptoOp({
+        op: "jwt.decode(token) — no verification",
+        input: forgedToken.substring(0, 40) + "...",
+        output: `DECODED (no signature check): ${payloadPreview}...`,
         algo: "none",
         detail: "jwt.decode() does not verify the signature — any payload is accepted.",
       });
-
       recordStep({
-        id: "strip-3",
+        id: "strip-4",
         kind: "exploit",
         label: "decode-only endpoint returns payload without verification",
         labelJa: "decode-only エンドポイントが署名未検証でペイロードを返す",
         status: "success",
         payload: {
           type: "http",
-          request: { method: "POST", url: "/api/jwt/attack/signature-stripping", body: { mode: "decode-only" } },
-          response: { status: 200, body: { decoded: decoded?.payload } },
+          request: { method: "POST", url: "/api/jwt/attack/signature-stripping" },
+          response: { status: 200, body: { decoded: lenientDecoded.payload, accepted: true } },
         },
+        detailJa: "decode-only エンドポイントは署名に関わらず任意のトークンを受け入れます。",
+        detail: "The decode-only endpoint accepts any token regardless of signature.",
       });
-
-      outcome = "succeeded";
-      summaryJa = "この実装は脆弱です: jwt.decode() は署名を検証しないため、偽造トークンのペイロードが受理されました。";
-      summary = "This implementation is vulnerable: jwt.decode() accepted the forged token payload without signature verification.";
-    } else {
-      // 堅牢モード: jwt.verify() で検証 → 拒否
-      let errorMessage = "invalid signature";
-      try {
-        jwt.verify(forgedToken, HS256_SECRET, { algorithms: ALLOWED_ALGORITHMS });
-      } catch (err) {
-        errorMessage = err instanceof Error ? err.message : "verification failed";
-      }
-
-      trace.addCryptoOp({
-        op: "jwt.verify(token, secret)",
-        input: forgedToken.substring(0, 40) + "...",
-        output: `REJECTED (${errorMessage})`,
-        algo: "HS256",
-        detail: "jwt.verify() recomputes the HMAC and rejects tokens with invalid signatures.",
-      });
-
-      recordStep({
-        id: "strip-4",
-        kind: "verify",
-        label: "Strict verifier rejects token with invalid signature",
-        labelJa: "堅牢検証が無効な署名を持つトークンを拒否",
-        status: "blocked",
-        payload: {
-          type: "http",
-          request: { method: "POST", url: "/api/jwt/attack/signature-stripping", body: { mode: "verify" } },
-          response: { status: 401, body: { error: errorMessage, blockedBy: "jwt_signature_mismatch" } },
-        },
-      });
-
-      outcome = "blocked";
-      blockedBy = "jwt_signature_mismatch";
-      summaryJa = "防御が機能しました: jwt.verify() が無効な署名を検出して拒否しました。";
-      summary = "Defense worked: jwt.verify() detected and rejected the invalid signature.";
     }
 
-    const finishedAt = Date.now();
-    const result: AttackResult = { scenarioId, outcome, startedAt, finishedAt, steps: stepsCollected, blockedBy, summary, summaryJa, logId };
+    // ── Step 5: verify — verify エンドポイントが署名不一致を検出して拒否 (堅牢モード) ──
+    let strictError = "invalid signature";
+    try {
+      jwt.verify(forgedToken, HS256_SECRET, { algorithms: ALLOWED_ALGORITHMS });
+    } catch (err) {
+      strictError = err instanceof Error ? err.message : "verification failed";
+    }
 
-    finalizeAttackLog(db, logId, {
-      success: outcome === "succeeded",
-      blockedBy,
-      stepsJson: JSON.stringify(stepsCollected),
-      payloadJson: JSON.stringify({ mode, forgedToken: forgedToken.substring(0, 60) }),
+    trace.addCryptoOp({
+      op: "jwt.verify(token, secret)",
+      input: forgedToken.substring(0, 40) + "...",
+      output: `REJECTED (${strictError})`,
+      algo: "HS256",
+      detail: "jwt.verify() recomputes the HMAC and rejects tokens with invalid signatures.",
     });
 
-    const status = outcome === "blocked" ? 401 : 200;
-    return c.json({ success: true, data: result }, status);
+    recordStep({
+      id: "strip-5",
+      kind: "verify",
+      label: "Strict verifier rejects token with invalid signature",
+      labelJa: "堅牢検証が無効な署名を持つトークンを拒否",
+      status: "blocked",
+      payload: {
+        type: "http",
+        request: { method: "POST", url: "/api/jwt/attack/signature-stripping" },
+        response: { status: 401, body: { error: strictError, blockedBy: "jwt_signature_mismatch" } },
+      },
+      detailJa: "jwt.verify() が署名の不一致を検出し、JsonWebTokenError をスローします。",
+      detail: "jwt.verify() detects the signature mismatch and throws JsonWebTokenError.",
+    });
+
+    const finishedAt = Date.now();
+    const result: AttackResult = {
+      scenarioId,
+      outcome: "succeeded",
+      startedAt,
+      finishedAt,
+      steps: stepsCollected,
+      blockedBy: "jwt_signature_mismatch",
+      summary: "decode-only endpoint accepted forged token (vulnerable). jwt.verify() rejected it (defense worked).",
+      summaryJa: "decode-only エンドポイントは偽造トークンを受理しましたが、jwt.verify() は拒否しました。",
+      logId,
+    };
+
+    finalizeAttackLog(db, logId, {
+      success: true,
+      blockedBy: "jwt_signature_mismatch",
+      stepsJson: JSON.stringify(stepsCollected),
+      payloadJson: JSON.stringify({ forgedToken: forgedToken.substring(0, 60), strictError }),
+    });
+
+    return c.json({ success: true, data: result }, 200);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
-    try {
-      finalizeAttackLog(db, logId, {
-        success: false,
-        stepsJson: JSON.stringify(stepsCollected),
-        payloadJson: JSON.stringify({ error: errorMessage }),
-      });
-    } catch {
-      // finalize 失敗時は握り潰す (二重例外回避)
+    // ROB-FIND-008: insertAttackLog 自体が失敗していた場合は logId が undefined のため finalize をスキップ
+    if (logId !== undefined) {
+      try {
+        finalizeAttackLog(db, logId, {
+          success: false,
+          stepsJson: JSON.stringify(stepsCollected),
+          payloadJson: JSON.stringify({ error: errorMessage }),
+        });
+      } catch {
+        // finalize 失敗時は握り潰す (二重例外回避)
+      }
     }
     return c.json({ success: false, error: errorMessage, data: { scenarioId, outcome: "error", startedAt, finishedAt: Date.now(), steps: stepsCollected, logId } }, 500);
   }
 });
 
-// ── Scenario D: kid ヘッダインジェクション ──
+// ── Scenario D: kid ヘッダインジェクション (5 ステップ完全形 + 両モード並列実行) ──
 const ALLOWED_KID = new Set(["key-1", "key-2"]);
 const DEFAULT_INJECTED_KID = "../public/attacker-key.pem";
 
 jwtOpsRoutes.post("/attack/kid-injection", async (c) => {
   const parsed = await parseBody(c, jwtAttackKidInjectionSchema);
   if ("error" in parsed) return parsed.error;
-  const { injectedKid, mode } = parsed.data;
+  const { injectedKid } = parsed.data;
 
   const trace = c.get("trace");
   const startedAt = Date.now();
   const scenarioId = "jwt-kid-injection";
   const tabId = "jwt";
   const db = getDb();
-  const logId = insertAttackLog(db, { scenarioId, tabId });
+  // ROB-FIND-008: insertAttackLog 失敗時も二重例外保護パターンが機能するよう、
+  // logId は let で宣言し try ブロック内で代入する。catch では logId !== undefined で保護。
+  let logId: number | undefined;
   const stepsCollected: AttackStep[] = [];
   const recordStep = (s: Omit<AttackStep, "timestamp">) => {
-    trace.addAttackStep(s);
-    stepsCollected.push({ ...s, timestamp: Date.now() });
+    // ROB-FIND-009: timestamp を 1 度だけ計算し、_trace.attackSteps と data.steps で共有
+    const stamped: AttackStep = { ...s, timestamp: Date.now() };
+    trace.addAttackStep(stamped);
+    stepsCollected.push(stamped);
   };
 
   try {
+    logId = insertAttackLog(db, { scenarioId, tabId });
     const kid = injectedKid ?? DEFAULT_INJECTED_KID;
 
-    // Step 1: kid 値のプローブ
+    // ── Step 1: probe — JWT kid ヘッダフィールドを調査 ──
     recordStep({
       id: "kid-1",
       kind: "probe",
@@ -713,157 +847,137 @@ jwtOpsRoutes.post("/attack/kid-injection", async (c) => {
       status: "success",
       payload: {
         type: "token",
-        decodedHeader: { alg: "RS256", typ: "JWT", kid },
+        decodedHeader: { alg: "RS256", typ: "JWT", kid: "key-1" },
+        decodedPayload: { sub: "seed_alice", role: "viewer" },
         algo: "RS256",
       },
+      detailJa: "kid (Key ID) ヘッダはサーバーに検証に使う鍵を指示します。",
       detail: "The kid (Key ID) header tells the server which key to use for verification.",
-      detailJa: "kid (Key ID) ヘッダはサーバーに検証に使用する鍵を指示します。",
     });
 
-    // Step 2: パストラバーサル kid 注入
+    // ── Step 2: tamper — kid ヘッダにパストラバーサル文字列を注入 ──
     recordStep({
       id: "kid-2",
       kind: "tamper",
-      label: "Inject path traversal string into kid header",
-      labelJa: "kid ヘッダにパストラバーサル文字列を注入",
+      label: "Inject path traversal in kid header",
+      labelJa: "kid ヘッダにパストラバーサルを注入",
       status: "success",
       payload: {
         type: "token",
         decodedHeader: { alg: "RS256", typ: "JWT", kid },
         algo: "RS256",
       },
-      detail: `Injected kid="${kid}" to attempt path traversal to attacker-controlled key.`,
-      detailJa: `kid="${kid}" を注入して攻撃者制御の鍵へのパストラバーサルを試みます。`,
+      detailJa: `攻撃者は kid を "${kid}" に置き換えます — パストラバーサルペイロードです。`,
+      detail: `Attacker replaces kid with "${kid}" — a path traversal payload.`,
     });
 
-    let outcome: AttackResult["outcome"];
-    let blockedBy: string | undefined;
-    let summaryJa: string;
-    let summary: string;
-    let kidResolved: string | undefined;
-
-    if (mode === "vulnerable") {
-      // シミュレーション: kid 値を「鍵ファイルパス」として "解決" するふりをする
-      // 実際のファイル読み込みは絶対に行わない (隔離原則)
-      trace.addCryptoOp({
-        op: "kid resolution (simulated)",
-        input: `kid="${kid}"`,
-        output: "RESOLVED to attacker-controlled key (simulated)",
+    // ── Step 3: forge — 攻撃者制御の鍵で偽造ペイロードに署名 (シミュレーション) ──
+    // 実際のファイル読み込みは絶対に行わない (隔離原則)
+    recordStep({
+      id: "kid-3",
+      kind: "forge",
+      label: "Sign forged payload with attacker-controlled key (simulated)",
+      labelJa: "攻撃者制御の鍵で偽造ペイロードに署名 (シミュレーション)",
+      status: "success",
+      payload: {
+        type: "token",
+        decodedHeader: { alg: "RS256", typ: "JWT", kid },
+        decodedPayload: { sub: "attacker_charlie", role: "admin" },
         algo: "RS256",
-        detail: "Vulnerable mode: kid is used as path without sanitization. NO actual file read.",
-      });
+        signatureValid: true,
+      },
+      detailJa: "シミュレーション: 攻撃者の秘密鍵で偽造トークンを署名。サーバーは attacker-key.pem を鍵として読み込みます。",
+      detail: "Simulated: forged token signed with attacker's private key. Server will load attacker-key.pem for verification.",
+    });
 
-      // Step 3: 攻撃者制御の鍵で検証が通ったていのシミュレーション
-      recordStep({
-        id: "kid-3",
-        kind: "forge",
-        label: "Forge token using attacker-controlled key (simulated)",
-        labelJa: "攻撃者制御の鍵でトークンを偽造 (シミュレーション)",
-        status: "success",
-        payload: {
-          type: "token",
-          decodedHeader: { alg: "RS256", typ: "JWT", kid },
-          decodedPayload: { sub: "attacker_charlie", role: "admin" },
-          algo: "RS256",
-          signatureValid: true,
+    // ── Step 4: exploit — 脆弱な kid 解決エンドポイントが偽造トークンを受理 (脆弱モード) ──
+    trace.addCryptoOp({
+      op: "kid resolution (simulated)",
+      input: `kid="${kid}"`,
+      output: "RESOLVED to attacker-controlled key (simulated, NO file read)",
+      algo: "RS256",
+      detail: "Vulnerable mode: kid is used as path without sanitization. NO actual file read.",
+    });
+
+    recordStep({
+      id: "kid-4",
+      kind: "exploit",
+      label: "Vulnerable verifier accepts forged token with injected kid",
+      labelJa: "脆弱な検証が注入された kid を持つ偽造トークンを受理",
+      status: "success",
+      payload: {
+        type: "http",
+        request: { method: "POST", url: "/api/jwt/attack/kid-injection" },
+        response: { status: 200, body: { kidResolved: kid, accepted: true } },
+      },
+      detailJa: "サーバーはサニタイズなしに kid から派生したパスの鍵を読み込みます (シミュレーション)。",
+      detail: "The server loads the key at the path derived from kid without sanitization (simulated).",
+    });
+
+    // ── Step 5: verify — 許可リスト検証エンドポイントが未知の kid を拒否 (堅牢モード) ──
+    const isAllowed = ALLOWED_KID.has(kid);
+    trace.addCryptoOp({
+      op: "kid allowlist check",
+      input: `kid="${kid}", allowlist=["key-1","key-2"]`,
+      output: isAllowed ? "ALLOWED" : "REJECTED (not in allowlist)",
+      algo: "validation",
+    });
+
+    // 注入された kid (デフォルト DEFAULT_INJECTED_KID) は ALLOWED_KID に含まれない設計
+    recordStep({
+      id: "kid-5",
+      kind: "verify",
+      label: "Allowlist-protected endpoint rejects injected kid",
+      labelJa: "許可リスト保護エンドポイントが注入 kid を拒否",
+      status: "blocked",
+      payload: {
+        type: "http",
+        request: { method: "POST", url: "/api/jwt/attack/kid-injection" },
+        response: {
+          status: 401,
+          body: { error: `unknown key id: ${kid}`, blockedBy: "jwt_kid_not_in_allowlist" },
         },
-        detail: "Simulated: attacker-controlled key path resolved, forged token accepted.",
-        detailJa: "シミュレーション: 攻撃者制御の鍵パスが解決され、偽造トークンが受理されました。",
-      });
-
-      // Step 4: エクスプロイト
-      recordStep({
-        id: "kid-4",
-        kind: "exploit",
-        label: "Vulnerable verifier accepts forged token with injected kid",
-        labelJa: "脆弱な検証が注入された kid を持つ偽造トークンを受理",
-        status: "success",
-        payload: {
-          type: "http",
-          request: { method: "POST", url: "/api/jwt/attack/kid-injection", body: { mode: "vulnerable", injectedKid: kid } },
-          response: { status: 200, body: { kidResolved: kid, accepted: true } },
-        },
-      });
-
-      outcome = "succeeded";
-      kidResolved = kid;
-      summaryJa = `この実装は脆弱です: kid "${kid}" がファイルパスとして解決されました (シミュレーション)。`;
-      summary = `This implementation is vulnerable: kid "${kid}" was resolved as a file path (simulated).`;
-    } else {
-      // allowlist 検証
-      const isAllowed = ALLOWED_KID.has(kid);
-
-      trace.addCryptoOp({
-        op: "kid allowlist check",
-        input: `kid="${kid}", allowlist=["key-1","key-2"]`,
-        output: isAllowed ? "ALLOWED" : "REJECTED (not in allowlist)",
-        algo: "validation",
-      });
-
-      if (!isAllowed) {
-        // Step 3: 拒否
-        recordStep({
-          id: "kid-3",
-          kind: "verify",
-          label: "Allowlist check rejects unknown kid",
-          labelJa: "許可リストが未知の kid を拒否",
-          status: "blocked",
-          payload: {
-            type: "http",
-            request: { method: "POST", url: "/api/jwt/attack/kid-injection", body: { mode: "allowlist", injectedKid: kid } },
-            response: { status: 401, body: { error: "kid not in allowlist", blockedBy: "jwt_kid_not_in_allowlist" } },
-          },
-          detail: `kid="${kid}" is not in the allowlist ["key-1", "key-2"].`,
-          detailJa: `kid="${kid}" は許可リスト ["key-1", "key-2"] に含まれていません。`,
-        });
-
-        outcome = "blocked";
-        blockedBy = "jwt_kid_not_in_allowlist";
-        summaryJa = "防御が機能しました: kid 許可リストが未知の kid を拒否しました。";
-        summary = "Defense worked: kid allowlist rejected the unknown kid value.";
-      } else {
-        // 許可リスト内 (通常はここには到達しない)
-        recordStep({
-          id: "kid-3",
-          kind: "verify",
-          label: "Allowlist check passes for known kid",
-          labelJa: "許可リストが既知の kid を許可",
-          status: "success",
-          payload: {
-            type: "generic",
-            data: { kid, allowed: true },
-          },
-        });
-
-        outcome = "succeeded";
-        kidResolved = kid;
-        summaryJa = `このシナリオでは kid "${kid}" は許可リストに含まれています。`;
-        summary = `In this scenario, kid "${kid}" is in the allowlist.`;
-      }
-    }
+      },
+      detailJa: `許可リスト検証: 有効な kid は "key-1", "key-2" のみ。"${kid}" は拒否されます。`,
+      detail: `Allowlist validation: only "key-1", "key-2" are valid kids. "${kid}" is rejected.`,
+    });
 
     const finishedAt = Date.now();
-    const result: AttackResult = { scenarioId, outcome, startedAt, finishedAt, steps: stepsCollected, blockedBy, summary, summaryJa, logId };
+    const extra = { kidResolved: kid };
+    const result: AttackResult<typeof extra> = {
+      scenarioId,
+      outcome: "succeeded",
+      startedAt,
+      finishedAt,
+      steps: stepsCollected,
+      blockedBy: "jwt_kid_not_in_allowlist",
+      summary: `Vulnerable verifier resolved kid "${kid}" as file path (simulated). Allowlist verifier rejected it (defense worked).`,
+      summaryJa: `脆弱検証は kid "${kid}" をファイルパスとして解決 (シミュレーション)、許可リスト検証は拒否しました。`,
+      logId,
+      extra,
+    };
 
     finalizeAttackLog(db, logId, {
-      success: outcome === "succeeded",
-      blockedBy,
+      success: true,
+      blockedBy: "jwt_kid_not_in_allowlist",
       stepsJson: JSON.stringify(stepsCollected),
-      payloadJson: JSON.stringify({ mode, kid }),
+      payloadJson: JSON.stringify({ kid, isAllowed }),
     });
 
-    const status = outcome === "blocked" ? 401 : 200;
-    return c.json({ success: true, data: { ...result, kidResolved } }, status);
+    return c.json({ success: true, data: result }, 200);
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
-    try {
-      finalizeAttackLog(db, logId, {
-        success: false,
-        stepsJson: JSON.stringify(stepsCollected),
-        payloadJson: JSON.stringify({ error: errorMessage }),
-      });
-    } catch {
-      // finalize 失敗時は握り潰す (二重例外回避)
+    // ROB-FIND-008: insertAttackLog 自体が失敗していた場合は logId が undefined のため finalize をスキップ
+    if (logId !== undefined) {
+      try {
+        finalizeAttackLog(db, logId, {
+          success: false,
+          stepsJson: JSON.stringify(stepsCollected),
+          payloadJson: JSON.stringify({ error: errorMessage }),
+        });
+      } catch {
+        // finalize 失敗時は握り潰す (二重例外回避)
+      }
     }
     return c.json({ success: false, error: errorMessage, data: { scenarioId, outcome: "error", startedAt, finishedAt: Date.now(), steps: stepsCollected, logId } }, 500);
   }

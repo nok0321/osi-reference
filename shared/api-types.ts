@@ -416,8 +416,11 @@ export type AttackStepPayload =
  * 攻撃シナリオ実行の全体結果。
  * POST /api/<area>/attack/<scenario-id> の成功レスポンスの data フィールドに格納される。
  * outcome リテラル: "succeeded" | "blocked" | "error" ("success" ではない)
+ *
+ * `TExtra` ジェネリックでシナリオ固有の追加フィールドを `extra` に格納する (E-1)。
+ * デフォルトは `Record<string, never>` (extra 不要なシナリオ向け)。
  */
-export interface AttackResult {
+export interface AttackResult<TExtra = Record<string, never>> {
   scenarioId: string;
   outcome: "succeeded" | "blocked" | "error";
   startedAt: number;
@@ -428,6 +431,8 @@ export interface AttackResult {
   summary?: string;
   summaryJa?: string;
   logId?: number;
+  /** シナリオ固有の追加フィールド (ジェネリック)。 */
+  extra?: TExtra;
 }
 
 /**
@@ -460,15 +465,14 @@ export interface AttackScenarioMeta {
   existingFileLinks?: { path: string; description: string }[];
 
   /**
-   * 攻撃シナリオが「脆弱モード」と「堅牢モード」を持つ場合の選択肢。
-   * 未定義の場合は AttackPanel がモードトグルを表示せず、デフォルトボディで実行する。
+   * シナリオが脆弱/堅牢の両モードを 1 リクエストで並列実行する場合の表示用ラベル (E-2)。
+   * UI は両モードの結果 (5 ステップ完全形のうちステップ 4=脆弱、ステップ 5=堅牢) を並列表示する。
+   * `body` は不要 (排他選択モードは廃止)。
    */
   modes?: {
     id: string;
     labelJa: string;
     label: string;
-    /** API リクエストのボディ。onRunScenario 呼び出し時にこの body で API リクエストする。 */
-    body: Record<string, unknown>;
     /** "vulnerable"=脆弱モード (赤系) / "defensive"=堅牢モード (緑系)。UI スタイルに使用。 */
     kind: "vulnerable" | "defensive";
   }[];

@@ -124,12 +124,13 @@ ssoApikeyRoutes.post("/apikey/generate", async (c) => {
     detail: "Server stores hash only — cannot recover original key",
   });
 
+  // is_attack_sim=0 で正常系 API キーを明示的に挿入 (E-3)
   db.prepare(
-    "INSERT INTO api_keys (key_id, key_prefix, key_hash, name) VALUES (?, ?, ?, ?)"
+    "INSERT INTO api_keys (key_id, key_prefix, key_hash, name, is_attack_sim) VALUES (?, ?, ?, ?, 0)"
   ).run(keyId, prefix, keyHash, name || "default");
 
   trace.addDbQuery({
-    sql: "INSERT INTO api_keys (key_id, key_prefix, key_hash, name) VALUES (?, ?, ?, ?)",
+    sql: "INSERT INTO api_keys (key_id, key_prefix, key_hash, name, is_attack_sim) VALUES (?, ?, ?, ?, 0)",
     params: [keyId, prefix, "(hash)", name || "default"],
     ms: 0,
   });
@@ -179,7 +180,8 @@ ssoApikeyRoutes.post("/apikey/verify/hmac", async (c) => {
   const trace = c.get("trace");
   const db = getDb();
 
-  const key = db.prepare("SELECT key_id, key_prefix, key_hash, name, created_at, last_used FROM api_keys WHERE key_id = ?").get(keyId) as ApiKeyRow | undefined;
+  // is_attack_sim=0 のみ参照 (E-3: 攻撃シミュレーションのキーを誤認しない)
+  const key = db.prepare("SELECT key_id, key_prefix, key_hash, name, created_at, last_used FROM api_keys WHERE key_id = ? AND is_attack_sim = 0").get(keyId) as ApiKeyRow | undefined;
   if (!key) {
     return c.json({ success: false, error: "Unknown key_id" }, 401);
   }
@@ -266,9 +268,10 @@ async function verifyApiKey(apiKey: string, method: string, trace: TraceCollecto
     detail: "Hash the provided key to compare with stored hash",
   });
 
-  const key = db.prepare("SELECT key_id, key_prefix, key_hash, name, created_at, last_used FROM api_keys WHERE key_hash = ?").get(keyHash) as ApiKeyRow | undefined;
+  // is_attack_sim=0 のみ参照 (E-3: 攻撃シミュレーションのキーを正規キーとして認証しない)
+  const key = db.prepare("SELECT key_id, key_prefix, key_hash, name, created_at, last_used FROM api_keys WHERE key_hash = ? AND is_attack_sim = 0").get(keyHash) as ApiKeyRow | undefined;
   trace.addDbQuery({
-    sql: "SELECT key_id, name FROM api_keys WHERE key_hash = ?",
+    sql: "SELECT key_id, name FROM api_keys WHERE key_hash = ? AND is_attack_sim = 0",
     params: [keyHash.substring(0, 20) + "..."],
     rows: key ? [{ key_id: key.key_id, name: key.name }] : [],
     ms: 0,
@@ -278,8 +281,8 @@ async function verifyApiKey(apiKey: string, method: string, trace: TraceCollecto
     return c.json({ success: false, error: "Invalid API key" }, 401);
   }
 
-  // Update last_used
-  db.prepare("UPDATE api_keys SET last_used = datetime('now') WHERE key_id = ?").run(key.key_id);
+  // Update last_used (正常系キーのみ)
+  db.prepare("UPDATE api_keys SET last_used = datetime('now') WHERE key_id = ? AND is_attack_sim = 0").run(key.key_id);
 
   return c.json({
     success: true,

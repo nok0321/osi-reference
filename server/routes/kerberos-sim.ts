@@ -93,13 +93,13 @@ kerberoSimRoutes.post("/as-req", async (c) => {
     detail: "Session key encrypted with client's key (derived from password)",
   });
 
-  // Store ticket
+  // Store ticket (is_attack_sim=0 で正常系チケットを明示的に挿入 / E-3)
   db.prepare(
-    "INSERT INTO kerberos_tickets (ticket_type, principal, realm, encrypted_data, session_key, valid_until) VALUES (?, ?, ?, ?, ?, ?)"
+    "INSERT INTO kerberos_tickets (ticket_type, principal, realm, encrypted_data, session_key, valid_until, is_attack_sim) VALUES (?, ?, ?, ?, ?, ?, 0)"
   ).run("TGT", principal, REALM, tgt.encrypted, sessionKey.toString("base64"), new Date(Date.now() + 8 * 3600 * 1000).toISOString());
 
   trace.addDbQuery({
-    sql: "INSERT INTO kerberos_tickets (...) VALUES (...)",
+    sql: "INSERT INTO kerberos_tickets (...) VALUES (...) [is_attack_sim=0]",
     params: ["TGT", principal, REALM],
     ms: 0,
   });
@@ -173,9 +173,9 @@ kerberoSimRoutes.post("/tgs-req", async (c) => {
     detail: `Encrypted with service's secret key — only ${servicePrincipal} can decrypt`,
   });
 
-  // Store
+  // Store (is_attack_sim=0 で正常系サービスチケットを挿入 / E-3)
   db.prepare(
-    "INSERT INTO kerberos_tickets (ticket_type, principal, realm, encrypted_data, session_key, valid_until) VALUES (?, ?, ?, ?, ?, ?)"
+    "INSERT INTO kerberos_tickets (ticket_type, principal, realm, encrypted_data, session_key, valid_until, is_attack_sim) VALUES (?, ?, ?, ?, ?, ?, 0)"
   ).run("ServiceTicket", servicePrincipal, REALM, serviceTicket.encrypted, serviceSessionKey.toString("base64"),
     new Date(Date.now() + 1 * 3600 * 1000).toISOString());
 
@@ -233,7 +233,8 @@ kerberoSimRoutes.get("/ticket-cache", (c) => {
     return c.json({ success: false, error: "Debug endpoint disabled in production" }, 403);
   }
   const db = getDb();
-  const tickets = db.prepare("SELECT ticket_type, principal, realm, valid_until, created_at FROM kerberos_tickets ORDER BY created_at DESC").all();
+  // 正常系チケットのみ表示 (E-3: 攻撃シミュレーションのレコードは別経路で確認)
+  const tickets = db.prepare("SELECT ticket_type, principal, realm, valid_until, created_at FROM kerberos_tickets WHERE is_attack_sim = 0 ORDER BY created_at DESC").all();
   return c.json({ success: true, data: { tickets } });
 });
 
@@ -242,6 +243,7 @@ kerberoSimRoutes.post("/reset", (c) => {
     return c.json({ success: false, error: "Reset disabled in production" }, 403);
   }
   const db = getDb();
-  db.prepare("DELETE FROM kerberos_tickets").run();
+  // 正常系チケットのみ削除 (E-3: 攻撃ログ用レコードを保護)
+  db.prepare("DELETE FROM kerberos_tickets WHERE is_attack_sim = 0").run();
   return c.json({ success: true, data: { message: "Ticket cache cleared" } });
 });

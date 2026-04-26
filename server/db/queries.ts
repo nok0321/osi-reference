@@ -14,10 +14,15 @@ export function findUserById(id: number): Pick<UserRow, "id" | "username"> | und
   return db.prepare("SELECT id, username FROM users WHERE id = ?").get(id) as Pick<UserRow, "id" | "username"> | undefined;
 }
 
-/** Delete expired sessions from the sessions table. Returns count of deleted rows. */
+/**
+ * Delete expired *normal-flow* sessions from the sessions table. Returns count of deleted rows.
+ *
+ * E-3: is_attack_sim=1 のレコードは攻撃シミュレーション履歴として attack_log と紐付くため、
+ * バックグラウンドの定期削除対象から除外する (DESIGN/04 §5.3 の正常系除外原則準拠)。
+ */
 export function cleanExpiredSessions(): number {
   const db = getDb();
-  const result = db.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
+  const result = db.prepare("DELETE FROM sessions WHERE expires_at < datetime('now') AND is_attack_sim = 0").run();
   return result.changes;
 }
 
