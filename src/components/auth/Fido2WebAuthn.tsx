@@ -9,9 +9,29 @@ import type { WebAuthnRegisterOptionsData, WebAuthnAuthOptionsData } from "../..
 import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
 import DataFlowPanel from "../shared/DataFlowPanel";
 import StepControl from "../shared/StepControl";
+import ViewModeToggle from "../shared/ViewModeToggle";
+import AttackPanel from "../shared/AttackPanel";
+import { getViewMode } from "../../state/attack-state";
+import { fido2Scenarios } from "./attacks/scenarios/fido2-scenarios";
+import type { AttackResult } from "../../../shared/api-types";
 import "./Fido2WebAuthn.css";
 
 const SCOPE = "fido2-webauthn";
+
+const ROUTE_BY_ID: Record<string, string> = {
+  "fido2-phishing-origin-rejection": "phishing-origin",
+  "fido2-vs-password-phishing": "vs-password-phishing",
+  "fido2-challenge-replay": "challenge-replay",
+};
+
+// SEC-FIDO2-1 緩和策 (SEC-FIDO2-7): FIDO2 タブ独自の補足ノート文言。
+// E-2 契約で全シナリオ outcome="succeeded" のため AttackResultBanner が
+// 「攻撃成立」を赤帯表示してしまうが、本タブの教育意図は「FIDO2 の防御が機能する」
+// ことを示すこと (DESIGN/15 §1.2)。学習者の誤認を緩和するため attacker view 上部に表示。
+const FIDO2_SPECIAL_NOTE = {
+  ja: "このタブは「攻撃が失敗すること」を確認するデモです。FIDO2 のフィッシング耐性を体験してください。",
+  en: "This tab demonstrates that attacks FAIL. Experience FIDO2's phishing resistance firsthand.",
+};
 
 function Fido2Demo() {
   const { t } = useI18n();
@@ -211,7 +231,7 @@ function Fido2Demo() {
   );
 }
 
-export default function Fido2WebAuthn() {
+function Fido2WebAuthnDefender() {
   const { t } = useI18n();
   const [ceremony, setCeremony] = createSignal<"register" | "auth">("register");
   const [regStep, setRegStep] = createSignal(0);
@@ -346,6 +366,58 @@ export default function Fido2WebAuthn() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+export default function Fido2WebAuthn() {
+  const { t } = useI18n();
+  return (
+    <div class="fido2-webauthn-wrapper">
+      <ViewModeToggle tabId="fido2" />
+      <Show when={getViewMode("fido2") === "defender"}>
+        <Fido2WebAuthnDefender />
+      </Show>
+      <Show when={getViewMode("fido2") === "attacker"}>
+        {/* SEC-FIDO2-7: FIDO2 タブ独自の補足ノート (DESIGN/15 §1.2 / §7) */}
+        <div
+          class="fido2-special-note"
+          role="note"
+          style={{
+            background: "rgba(82,196,26,0.12)",
+            "border-left": "3px solid var(--color-success, #52c41a)",
+            padding: "8px 12px",
+            "margin-bottom": "12px",
+            "font-size": "0.9rem",
+          }}
+        >
+          {t(FIDO2_SPECIAL_NOTE.ja, FIDO2_SPECIAL_NOTE.en)}
+        </div>
+        <AttackPanel
+          tabId="fido2"
+          scenarios={fido2Scenarios}
+          onRunScenario={async (s) => {
+            const routeSuffix = ROUTE_BY_ID[s.id] ?? s.id.replace(/^fido2-/, "");
+            const res = await apiPost<AttackResult>(
+              `/api/webauthn/attack/${routeSuffix}`,
+              {},
+              "attack-fido2",
+            );
+            if (!res.data) {
+              return {
+                scenarioId: s.id,
+                outcome: "error" as const,
+                startedAt: Date.now(),
+                finishedAt: Date.now(),
+                steps: [],
+                summaryJa: res.error ?? "実行エラー",
+                summary: res.error ?? "Execution error",
+              };
+            }
+            return res.data;
+          }}
+        />
+      </Show>
     </div>
   );
 }

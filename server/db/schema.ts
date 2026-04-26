@@ -42,7 +42,9 @@ export function _createTestDb(): Database.Database {
 function migrateSchema(db: Database.Database) {
   // SEC FINDING-6: refresh_tokens を追加。Phase 2 後続の session-token / oauth 攻撃が
   // refresh_tokens テーブルを更新する場合の正常系除外フィルタに必須。
-  const tablesNeedingFlag = ["sessions", "oauth_codes", "oauth_tokens", "api_keys", "kerberos_tickets", "refresh_tokens"] as const;
+  // Phase 2 第六コミット (fido2): webauthn_credentials を追加。challenge-replay シナリオで
+  // 攻撃シミュレーション用クレデンシャルを INSERT するため、正常系の SELECT 結果から除外する必要がある。
+  const tablesNeedingFlag = ["sessions", "oauth_codes", "oauth_tokens", "api_keys", "kerberos_tickets", "refresh_tokens", "webauthn_credentials"] as const;
   for (const tbl of tablesNeedingFlag) {
     const cols = db.prepare(`PRAGMA table_info(${tbl})`).all() as { name: string }[];
     if (!cols.some((c) => c.name === "is_attack_sim")) {
@@ -134,6 +136,7 @@ function initSchema(db: Database.Database) {
       counter INTEGER DEFAULT 0,
       transports TEXT,
       created_at TEXT DEFAULT (datetime('now')),
+      is_attack_sim INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
 

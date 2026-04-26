@@ -241,6 +241,16 @@ export const tokenAttackReplaySchema = z.object({
   scenarioDelay: z.number().int().min(0).max(86400).default(960), // 0=即時, 960=16分(=有効期限超過)
 });
 
+// ── WebAuthn / FIDO2 Attack Demo ──
+// E-2: 各シナリオは 1 リクエストで両モード (脆弱+堅牢) を必ず並列実行する。
+//      handler が実際に参照するフィールドのみ (ROB-FIND-006)。
+//      default() を付与することで body 省略可能にする (oauth/rbac/session スキーマ参照)。
+export const webauthnAttackPhishingOriginSchema = z.object({});
+
+export const webauthnAttackVsPasswordPhishingSchema = z.object({});
+
+export const webauthnAttackChallengeReplaySchema = z.object({});
+
 // ── SSO / API Key ──
 export const ssoLoginSchema = z.object({ username: z.string().min(1) });
 export const ssoAccessServiceSchema = z.object({

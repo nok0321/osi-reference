@@ -57,7 +57,7 @@ const ALLOWED_TABLES = [
 type AllowedTable = (typeof ALLOWED_TABLES)[number];
 
 // Map of safe SELECT queries per table (prevents SQL injection entirely)
-// E-3: is_attack_sim フラグを持つテーブル (sessions, oauth_codes, oauth_tokens, api_keys, kerberos_tickets) は
+// E-3: is_attack_sim フラグを持つテーブル (sessions, oauth_codes, oauth_tokens, api_keys, kerberos_tickets, refresh_tokens, webauthn_credentials) は
 //      正常系レコード (is_attack_sim=0) のみ表示。攻撃シミュレーションレコードは attack_log テーブルで確認可能。
 const TABLE_QUERIES: Record<AllowedTable, string> = {
   users: "SELECT id, username, created_at FROM users",
@@ -69,7 +69,7 @@ const TABLE_QUERIES: Record<AllowedTable, string> = {
   user_roles: "SELECT * FROM user_roles",
   permissions: "SELECT * FROM permissions",
   role_permissions: "SELECT * FROM role_permissions",
-  webauthn_credentials: "SELECT credential_id, user_id, counter, created_at FROM webauthn_credentials",
+  webauthn_credentials: "SELECT credential_id, user_id, counter, created_at FROM webauthn_credentials WHERE is_attack_sim = 0",
   api_keys: "SELECT key_id, key_prefix, name, created_at, last_used FROM api_keys WHERE is_attack_sim = 0",
   kerberos_tickets: "SELECT ticket_type, principal, realm, valid_until, created_at FROM kerberos_tickets WHERE is_attack_sim = 0",
   user_mfa: "SELECT user_id, verified, created_at, verified_at FROM user_mfa",
