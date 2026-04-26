@@ -1,0 +1,51 @@
+.attack-result-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 2px solid transparent;
+  border-left-width: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 600;
+  animation: bannerSlideDown 300ms var(--transition-normal) both;
+}
+
+.attack-result-banner[data-outcome="succeeded"] {
+  background: var(--color-attack-bg);
+  border-color: var(--color-attack-accent);
+  color: var(--color-attack-accent);
+}
+
+.attack-result-banner[data-outcome="blocked"] {
+  background: var(--color-success-subtle);
+  border-color: var(--color-success-border);
+  color: var(--color-success);
+}
+
+.attack-result-banner[data-outcome="error"] {
+  background: var(--color-warning-dim);
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+
+.attack-result-prefix {
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.attack-result-message {
+  line-height: 1.4;
+}
+
+@keyframes bannerSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

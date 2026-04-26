@@ -1,0 +1,61 @@
+.attack-panel {
+  border: 1px solid var(--color-attack-accent-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  overflow: clip;
+  background: var(--bg-secondary);
+}
+
+.attack-panel-inner {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.attack-run-button {
+  align-self: flex-start;
+  padding: 8px 20px;
+  background: var(--color-attack-bg);
+  border: 1px solid var(--color-attack-accent-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-attack-accent);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  min-height: 36px;
+}
+
+.attack-run-button:hover:not(:disabled) {
+  background: var(--color-attack-accent-dim);
+  border-color: var(--color-attack-accent);
+}
+
+.attack-run-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.attack-run-button:focus-visible {
+  outline: 2px solid var(--glow-color);
+  outline-offset: 2px;
+}
+
+.attack-panel-body {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+  .attack-panel-body {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.attack-panel-timeline,
+.attack-panel-defense {
+  min-width: 0;
+}

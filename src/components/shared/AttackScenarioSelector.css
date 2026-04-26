@@ -1,0 +1,148 @@
+.attack-scenario-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+}
+
+.attack-scenario-label {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.attack-scenario-single {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.attack-scenario-name {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.attack-scenario-desc {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.attack-scenario-meta {
+  margin-top: 4px;
+}
+
+/* ── チップ群 (デスクトップ) ── */
+.attack-scenario-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.attack-scenario-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.attack-scenario-chip:hover {
+  border-color: var(--border-active);
+  color: var(--text-primary);
+}
+
+.attack-scenario-chip[data-selected="true"] {
+  border-color: var(--color-attack-accent-border);
+  background: var(--color-attack-bg);
+  color: var(--color-attack-accent);
+}
+
+.attack-scenario-chip:focus-visible {
+  outline: 2px solid var(--glow-color);
+  outline-offset: 2px;
+}
+
+.attack-chip-name {
+  font-weight: 600;
+}
+
+.attack-chip-ref {
+  color: var(--glow-color);
+  font-size: 0.65rem;
+  text-decoration: none;
+}
+
+.attack-chip-ref:hover {
+  text-decoration: underline;
+}
+
+/* ── ネイティブ select (モバイル) ── */
+.attack-scenario-select {
+  display: none; /* モバイルのみ表示 */
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 767px) {
+  .attack-scenario-chips {
+    display: none;
+  }
+  .attack-scenario-select {
+    display: block;
+  }
+}
+
+/* ── 深刻度バッジ ── */
+.severity-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+
+.severity-badge[data-severity="critical"] {
+  background: var(--color-danger-muted);
+  color: var(--color-danger);
+}
+
+.severity-badge[data-severity="high"] {
+  background: var(--color-attack-bg);
+  color: var(--color-attack-accent);
+}
+
+.severity-badge[data-severity="medium"] {
+  background: var(--color-warning-dim);
+  color: var(--color-warning);
+}
+
+.severity-badge[data-severity="low"] {
+  background: var(--color-info-dim);
+  color: var(--color-info);
+}
+
+.severity-badge[data-severity="info"] {
+  background: var(--color-success-muted);
+  color: var(--color-success);
+}

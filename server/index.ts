@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import { traceMiddleware } from "./middleware/trace-logger.js";
+import { ensureAttackEnabled } from "./middleware/attack-guard.js";
 import { getDb, seedDb } from "./db/schema.js";
 import { passwordAuthRoutes } from "./routes/password-auth.js";
 import { jwtOpsRoutes } from "./routes/jwt-ops.js";
@@ -22,6 +23,13 @@ const app = new Hono();
 
 // ── Middleware ──
 app.use("/api/*", cors({ origin: "http://localhost:3000", credentials: true }));
+app.use("/api/*", async (c, next) => {
+  if (c.req.path.includes("/attack/")) {
+    const blocked = ensureAttackEnabled(c);
+    if (blocked) return blocked;
+  }
+  await next();
+});
 app.use("/api/*", traceMiddleware);
 
 // ── Routes ──
@@ -44,6 +52,7 @@ const ALLOWED_TABLES = [
   "users", "sessions", "oauth_clients", "oauth_codes", "oauth_tokens",
   "roles", "user_roles", "permissions", "role_permissions",
   "webauthn_credentials", "api_keys", "kerberos_tickets", "user_mfa",
+  "attack_log",
 ] as const;
 type AllowedTable = (typeof ALLOWED_TABLES)[number];
 
@@ -62,6 +71,7 @@ const TABLE_QUERIES: Record<AllowedTable, string> = {
   api_keys: "SELECT key_id, key_prefix, name, created_at, last_used FROM api_keys",
   kerberos_tickets: "SELECT ticket_type, principal, realm, valid_until, created_at FROM kerberos_tickets",
   user_mfa: "SELECT user_id, verified, created_at, verified_at FROM user_mfa",
+  attack_log: "SELECT id, scenario_id, tab_id, started_at, finished_at, success, blocked_by, user_session_id FROM attack_log ORDER BY started_at DESC",
 };
 
 app.get("/api/debug/tables/:name", (c) => {

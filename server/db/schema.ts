@@ -153,6 +153,19 @@ function initSchema(db: Database.Database) {
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS attack_log (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      scenario_id      TEXT    NOT NULL,
+      tab_id           TEXT    NOT NULL,
+      started_at       INTEGER NOT NULL,
+      finished_at      INTEGER,
+      success          INTEGER NOT NULL DEFAULT 0,
+      blocked_by       TEXT,
+      steps_json       TEXT,
+      payload_json     TEXT,
+      user_session_id  TEXT
+    );
+
     -- Indexes for frequently queried columns
     CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
@@ -169,6 +182,9 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_user_mfa_user_id ON user_mfa(user_id);
     CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
     CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_attack_log_scenario ON attack_log(scenario_id);
+    CREATE INDEX IF NOT EXISTS idx_attack_log_tab ON attack_log(tab_id);
+    CREATE INDEX IF NOT EXISTS idx_attack_log_started_at ON attack_log(started_at DESC);
   `);
 }
 
@@ -177,6 +193,7 @@ export function seedDb() {
 
   // Clear all tables
   d.exec(`
+    DELETE FROM attack_log;
     DELETE FROM kerberos_tickets;
     DELETE FROM api_keys;
     DELETE FROM webauthn_credentials;

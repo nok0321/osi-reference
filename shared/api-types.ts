@@ -24,6 +24,10 @@ export interface ServerTrace {
   dbQueries?: DbQuery[];
   cryptoOps?: CryptoOp[];
   sessionOps?: SessionOp[];
+  /** 攻撃シナリオのステップ一覧。攻撃デモエンドポイントのみ付与。 */
+  attackSteps?: AttackStep[];
+  /** 攻撃デモエンドポイント (/attack/) から発生したトレースの場合 true。middleware が自動セット。 */
+  isAttackMode?: boolean;
 }
 
 export interface ApiResponse<T = unknown> {
@@ -288,4 +292,178 @@ export interface PasskeyRegisterVerifyResponse {
   credentialDeviceType: string;
   credentialBackedUp: boolean;
   publicKeyPreview: string;
+}
+
+/* ── Attack Demo Catalog (教育用シミュレーション専用型) ── */
+
+/**
+ * 攻撃ステップの操作種別。
+ * DataFlowPanel および AttackStepTimeline コンポーネントでアイコン・色の選択に使用される。
+ */
+export type AttackStepKind =
+  | "intercept"
+  | "tamper"
+  | "replay"
+  | "forge"
+  | "probe"
+  | "verify"
+  | "exploit"
+  | "blocked";
+
+/**
+ * 攻撃シナリオを構成する1ステップ。
+ * ServerTrace.attackSteps[] に格納され、DataFlowPanel の Trace タブで時系列表示される。
+ */
+export interface AttackStep {
+  id: string;
+  kind: AttackStepKind;
+  label: string;
+  labelJa: string;
+  status: "pending" | "running" | "success" | "failed" | "blocked";
+  payload?: AttackStepPayload;
+  detail?: string;
+  detailJa?: string;
+  /** Unix ミリ秒。addAttackStep() が自動付与する。 */
+  timestamp: number;
+}
+
+/**
+ * 攻撃ステップが保持するペイロードデータ。
+ * `type` フィールドで TypeScript の型絞り込みが可能なタグ付きユニオン。
+ */
+export type AttackStepPayload =
+  | {
+      type: "http";
+      request?: {
+        method: string;
+        url: string;
+        headers?: Record<string, string>;
+        body?: unknown;
+      };
+      response?: {
+        status: number;
+        headers?: Record<string, string>;
+        body?: unknown;
+      };
+      tamperedFields?: string[];
+    }
+  | {
+      type: "token";
+      before?: string;
+      after?: string;
+      algo?: string;
+      decodedHeader?: Record<string, unknown>;
+      decodedPayload?: Record<string, unknown>;
+      signatureValid?: boolean;
+    }
+  | {
+      type: "credential";
+      username?: string;
+      passwordHashAlgo?: string;
+      triedPasswords?: string[];
+      crackedPassword?: string;
+      apiKeyPrefix?: string;
+      apiKeySecret?: string;
+      clearedFlag?: string;
+    }
+  | {
+      type: "ticket";
+      ticketId?: string;
+      ticketType?: "TGT" | "ServiceTicket";
+      principal?: string;
+      encryptedFor?: string;
+      realm?: string;
+      encryptedData?: string;
+      decryptedFields?: Record<string, string>;
+      sessionKey?: string;
+      validUntil?: string;
+      stolenFrom?: string;
+    }
+  | {
+      type: "saml";
+      assertionXml?: string;
+      signatureValid?: boolean;
+      spEntityId?: string;
+      nameId?: string;
+      attributes?: Record<string, string>;
+      notOnOrAfter?: string;
+    }
+  | {
+      type: "tls";
+      version?: string;
+      downgradedTo?: string;
+      cipherSuite?: string;
+      weakCipherSuite?: string;
+      certificate?: {
+        subject: string;
+        issuer: string;
+        validFrom: string;
+        validTo: string;
+        selfSigned: boolean;
+      };
+      fakeCertificate?: {
+        subject: string;
+        issuer: string;
+        selfSigned: boolean;
+      };
+    }
+  | {
+      type: "generic";
+      data: Record<string, unknown>;
+    };
+
+/**
+ * 攻撃シナリオ実行の全体結果。
+ * POST /api/<area>/attack/<scenario-id> の成功レスポンスの data フィールドに格納される。
+ * outcome リテラル: "succeeded" | "blocked" | "error" ("success" ではない)
+ */
+export interface AttackResult {
+  scenarioId: string;
+  outcome: "succeeded" | "blocked" | "error";
+  startedAt: number;
+  finishedAt: number;
+  /** 実行されたすべてのステップ (時系列順)。 */
+  steps: AttackStep[];
+  blockedBy?: string;
+  summary?: string;
+  summaryJa?: string;
+  logId?: number;
+}
+
+/**
+ * 攻撃シナリオのメタ情報。
+ * tabId は src/types/security.ts の AuthSubView 型と一致させる (循環参照回避のため string)。
+ * severity リテラル順: "info" | "low" | "medium" | "high" | "critical"
+ */
+export interface AttackScenarioMeta {
+  id: string;
+  /** AuthSubView 型と一致させる。例: "jwt", "oauth", "rbac" */
+  tabId: string;
+  name: string;
+  nameJa: string;
+  category: string;
+  cweId?: string;
+  capecId?: string;
+  difficulty: 1 | 2 | 3 | 4 | 5;
+  osiLayer: number | string;
+  severity: "info" | "low" | "medium" | "high" | "critical";
+  description: string;
+  descriptionJa: string;
+  mitigation: string;
+  mitigationJa: string;
+  references?: string[];
+}
+
+/** attack_log テーブルの行型。 */
+export interface AttackLogRow {
+  id: number;
+  scenario_id: string;
+  tab_id: string;
+  started_at: number;
+  finished_at: number | null;
+  success: 0 | 1;
+  blocked_by: string | null;
+  steps_json: string | null;
+  payload_json: string | null;
+  user_session_id: string | null;
 }

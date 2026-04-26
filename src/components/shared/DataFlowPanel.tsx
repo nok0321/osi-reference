@@ -1,7 +1,9 @@
 import { createSignal, createEffect, Show, For } from "solid-js";
 import { useI18n } from "../../i18n/context";
 import type { CapturedExchange, ServerTrace, CryptoOp, DbQuery, SessionOp } from "../../api/client";
+import type { AttackStep } from "../../../shared/api-types";
 import { getScopedExchanges } from "../../api/client";
+import { safeStringify } from "../../utils/safe-stringify";
 import "./DataFlowPanel.css";
 
 interface DataFlowPanelProps {
@@ -104,9 +106,22 @@ function HttpInspectorView(props: { exchanges: CapturedExchange[] }) {
   );
 }
 
-/* ── Trace View (Crypto + Session ops) ── */
+/* ── Trace View (Attack Steps + Crypto + Session ops) ── */
 function TraceView(props: { exchanges: CapturedExchange[] }) {
   const { t } = useI18n();
+
+  const allAttackSteps = () => {
+    const steps: (AttackStep & { exchangeId: string })[] = [];
+    for (const ex of props.exchanges) {
+      if (ex.trace?.attackSteps) {
+        for (const step of ex.trace.attackSteps) {
+          steps.push({ ...step, exchangeId: ex.id });
+        }
+      }
+    }
+    return steps;
+  };
+
   const allCryptoOps = () => {
     const ops: (CryptoOp & { exchangeId: string })[] = [];
     for (const ex of props.exchanges) {
@@ -133,8 +148,48 @@ function TraceView(props: { exchanges: CapturedExchange[] }) {
 
   return (
     <div>
-      <Show when={allCryptoOps().length === 0 && allSessionOps().length === 0}>
+      <Show when={allAttackSteps().length === 0 && allCryptoOps().length === 0 && allSessionOps().length === 0}>
         <div class="trace-empty">{t("サーバートレースなし", "No server trace data yet")}</div>
+      </Show>
+
+      {/* 攻撃ステップ (先頭) */}
+      <Show when={allAttackSteps().length > 0}>
+        <div class="trace-section">
+          <div class="trace-section-title">
+            <span class="trace-section-icon" aria-hidden="true">[A]</span>
+            {" "}{t("攻撃ステップ", "Attack Steps")}
+          </div>
+          <div class="crypto-viz">
+            <For each={allAttackSteps()}>
+              {(step) => (
+                <div
+                  class="crypto-op attack-trace-step"
+                  data-status={step.status}
+                >
+                  <div class="crypto-op-header">
+                    <span class="crypto-op-name">{step.kind}</span>
+                    <span
+                      class="crypto-op-algo attack-trace-status"
+                      data-status={step.status}
+                    >
+                      {step.status}
+                    </span>
+                  </div>
+                  <div class="crypto-op-row">
+                    <span class="label">{t("操作:", "Step:")}</span>
+                    <span class="value">{t(step.labelJa, step.label)}</span>
+                  </div>
+                  <Show when={step.payload}>
+                    <div class="crypto-op-row" style="margin-top:4px">
+                      <span class="label">{t("ペイロード:", "Payload:")}</span>
+                      <span class="value">{safeStringify(step.payload)}</span>
+                    </div>
+                  </Show>
+                </div>
+              )}
+            </For>
+          </div>
+        </div>
       </Show>
 
       <Show when={allCryptoOps().length > 0}>

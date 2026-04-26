@@ -215,3 +215,16 @@ export interface ApiKeyPattern {
   example: string;
   security: "low" | "medium" | "high";
 }
+
+/* ── Attack Demo Catalog types (re-export from shared/api-types) ── */
+export type {
+  AttackStepKind,
+  AttackStep,
+  AttackStepPayload,
+  AttackResult,
+  AttackScenarioMeta,
+  AttackLogRow,
+} from "../../shared/api-types";
+
+/** 深刻度リテラル。順序固定: info | low | medium | high | critical */
+export type SeverityLevel = "info" | "low" | "medium" | "high" | "critical";

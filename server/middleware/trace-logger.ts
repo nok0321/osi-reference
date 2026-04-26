@@ -1,5 +1,5 @@
 import type { Context, Next } from "hono";
-import type { ServerTrace, DbQuery, CryptoOp, SessionOp } from "../../shared/api-types.js";
+import type { ServerTrace, DbQuery, CryptoOp, SessionOp, AttackStep } from "../../shared/api-types.js";
 
 /**
  * Per-request trace collector.
@@ -11,6 +11,8 @@ export interface TraceCollector {
   addDbQuery(q: DbQuery): void;
   addCryptoOp(op: CryptoOp): void;
   addSessionOp(op: SessionOp): void;
+  /** timestamp は自動付与されるため省略可 (DESIGN/03 §5.1 参照)。 */
+  addAttackStep(step: Omit<AttackStep, "timestamp">): void;
   getTrace(): ServerTrace;
 }
 
@@ -18,16 +20,19 @@ function createTraceCollector(): TraceCollector {
   const dbQueries: DbQuery[] = [];
   const cryptoOps: CryptoOp[] = [];
   const sessionOps: SessionOp[] = [];
+  const attackSteps: AttackStep[] = [];
 
   return {
     addDbQuery(q) { dbQueries.push(q); },
     addCryptoOp(op) { cryptoOps.push(op); },
     addSessionOp(op) { sessionOps.push(op); },
+    addAttackStep(step) { attackSteps.push({ ...step, timestamp: Date.now() }); },
     getTrace() {
       const trace: ServerTrace = {};
       if (dbQueries.length) trace.dbQueries = dbQueries;
       if (cryptoOps.length) trace.cryptoOps = cryptoOps;
       if (sessionOps.length) trace.sessionOps = sessionOps;
+      if (attackSteps.length) trace.attackSteps = attackSteps;
       return trace;
     },
   };
@@ -49,6 +54,9 @@ export async function traceMiddleware(ctx: Context, next: Next) {
   if (contentType.includes("application/json")) {
     const body = await ctx.res.json();
     const trace = collector.getTrace();
+    if (ctx.req.path.includes("/attack/")) {
+      trace.isAttackMode = true;
+    }
     if (Object.keys(trace).length > 0) {
       body._trace = trace;
     }
