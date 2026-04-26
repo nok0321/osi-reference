@@ -7,6 +7,11 @@ import { apiPost, apiGet } from "../../api/client";
 import type { OAuthAuthorizePageData, OAuthCodeData, OAuthTokenData } from "../../types/auth-responses";
 import DataFlowPanel from "../shared/DataFlowPanel";
 import StepControl from "../shared/StepControl";
+import ViewModeToggle from "../shared/ViewModeToggle";
+import AttackPanel from "../shared/AttackPanel";
+import { getViewMode } from "../../state/attack-state";
+import { oauthScenarios } from "./attacks/scenarios/oauth-scenarios";
+import type { AttackResult } from "../../../shared/api-types";
 import "./OAuthFlow.css";
 
 const SCOPE = "oauth-flow";
@@ -22,7 +27,7 @@ interface OAuthLiveState {
   resource?: { resource?: { data?: unknown }; [key: string]: unknown };
 }
 
-export default function OAuthFlow() {
+function OAuthFlowDefender() {
   const { t } = useI18n();
   const ac = new AbortController();
   onCleanup(() => ac.abort());
@@ -325,6 +330,48 @@ export default function OAuthFlow() {
           </button>
         </Show>
       </div>
+    </div>
+  );
+}
+
+export default function OAuthFlow() {
+  return (
+    <div class="oauth-flow-wrapper">
+      {/* View mode toggle (Defender / Attacker) — 両モード共通領域 */}
+      <ViewModeToggle tabId="oauth" />
+
+      <Show when={getViewMode("oauth") === "defender"}>
+        <OAuthFlowDefender />
+      </Show>
+
+      {/* Attacker mode: attack scenario panel */}
+      <Show when={getViewMode("oauth") === "attacker"}>
+        <AttackPanel
+          tabId="oauth"
+          scenarios={oauthScenarios}
+          onRunScenario={async (s) => {
+            const suffix = s.id.replace(/^oauth-/, "");
+            // E-2: 両モード並列実行のため body は不要 (空オブジェクト)
+            const res = await apiPost<AttackResult>(
+              `/api/oauth/attack/${suffix}`,
+              {},
+              "attack-oauth"
+            );
+            if (!res.data) {
+              return {
+                scenarioId: s.id,
+                outcome: "error" as const,
+                startedAt: Date.now(),
+                finishedAt: Date.now(),
+                steps: [],
+                summaryJa: res.error ?? "実行エラーが発生しました",
+                summary: res.error ?? "Execution error occurred",
+              };
+            }
+            return res.data;
+          }}
+        />
+      </Show>
     </div>
   );
 }

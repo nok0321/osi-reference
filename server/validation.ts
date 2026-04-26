@@ -187,6 +187,17 @@ export const passkeyAuthVerifySchema = z.object({
   response: z.record(z.string(), z.unknown()),
 });
 
+// ── OAuth Attack Demo ──
+// E-2: 各シナリオは 1 リクエストで両モード (脆弱+堅牢) を必ず並列実行する。
+//      モード選択フィールドは廃止。handler が実際に参照するフィールドのみ (ROB-FIND-006)。
+export const oauthAttackStateCsrfSchema = z.object({});
+
+export const oauthAttackRedirectUriBypassSchema = z.object({
+  attackerRedirectUri: z.string().max(512).optional(),
+});
+
+export const oauthAttackCodeViaRefererSchema = z.object({});
+
 // ── SSO / API Key ──
 export const ssoLoginSchema = z.object({ username: z.string().min(1) });
 export const ssoAccessServiceSchema = z.object({
