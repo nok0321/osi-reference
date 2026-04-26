@@ -198,6 +198,34 @@ export const oauthAttackRedirectUriBypassSchema = z.object({
 
 export const oauthAttackCodeViaRefererSchema = z.object({});
 
+// ── RBAC Attack Demo ──
+// E-2: 各シナリオは 1 リクエストで両モード (脆弱+堅牢) を必ず並列実行する。
+//      handler が実際に参照するフィールドのみ (ROB-FIND-006)。
+//      default() を付与することで body 省略可能にする (oauth スキーマ参照)。
+export const rbacAttackIdorSchema = z.object({
+  victimId: z.number().int().min(1).max(999).default(1),
+  attackerId: z.number().int().min(1).max(999).default(3),
+});
+
+export const rbacAttackHorizontalEscalationSchema = z.object({
+  attackerRole: z.enum(["admin", "editor", "viewer"]).default("editor"),
+  attackerUserId: z.number().int().min(1).max(999).default(2),
+  victimUserId: z.number().int().min(1).max(999).default(1),
+  action: z.enum(["read", "write", "delete"]).default("read"),
+});
+
+export const rbacAttackVerticalEscalationSchema = z.object({
+  attackerRole: z.enum(["admin", "editor", "viewer"]).default("viewer"),
+  targetUserId: z.number().int().min(1).max(999).default(1),
+});
+
+export const rbacAttackAbacTamperSchema = z.object({
+  subject: z.enum(["seed_alice", "seed_bob", "attacker_charlie", "seed_admin"]).default("attacker_charlie"),
+  clientDepartment: z.enum(["Engineering", "Marketing", "Finance", "IT"]).default("Finance"),
+  resourceDepartment: z.enum(["Engineering", "Marketing", "Finance", "IT"]).default("Finance"),
+  action: z.enum(["read", "write"]).default("read"),
+});
+
 // ── SSO / API Key ──
 export const ssoLoginSchema = z.object({ username: z.string().min(1) });
 export const ssoAccessServiceSchema = z.object({

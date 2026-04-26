@@ -4,6 +4,11 @@ import { RBAC_ROLES, ALL_PERMISSIONS, ABAC_POLICIES, ACL_ENTRIES, ACL_SUBJECTS, 
 import type { RbacRole, AbacPolicy, AclEntry, PolicyRule } from "../../types/security";
 import { apiPost, apiGet } from "../../api/client";
 import DataFlowPanel from "../shared/DataFlowPanel";
+import ViewModeToggle from "../shared/ViewModeToggle";
+import AttackPanel from "../shared/AttackPanel";
+import { getViewMode } from "../../state/attack-state";
+import { rbacScenarios } from "./attacks/scenarios/rbac-scenarios";
+import type { AttackResult, AttackScenarioMeta } from "../../../shared/api-types";
 import "./PermissionModel.css";
 
 const SCOPE = "rbac-check";
@@ -277,7 +282,7 @@ function AccessCheckDemo(props: { mode: () => "rbac" | "abac" | "acl" | "policy"
   );
 }
 
-export default function PermissionModel() {
+function PermissionModelDefender() {
   const { t } = useI18n();
   const [mode, setMode] = createSignal<"rbac" | "abac" | "acl" | "policy">("rbac");
   const [selectedRole, setSelectedRole] = createSignal<string | null>(null);
@@ -287,7 +292,7 @@ export default function PermissionModel() {
   }
 
   return (
-    <div class="permission-model">
+    <div class="perm-toggle-wrapper">
       <div class="perm-toggle">
         <button
           class="perm-mode-btn"
@@ -629,6 +634,50 @@ export default function PermissionModel() {
       </Show>
 
       <AccessCheckDemo mode={mode} />
+    </div>
+  );
+}
+
+export default function PermissionModel() {
+  const ROUTE_BY_ID: Record<string, string> = {
+    "rbac-idor": "idor",
+    "rbac-horizontal-privilege-escalation": "horizontal-escalation",
+    "rbac-vertical-privilege-escalation": "vertical-escalation",
+    "rbac-abac-attribute-tampering": "abac-tamper",
+  };
+
+  return (
+    <div class="permission-model">
+      <ViewModeToggle tabId="rbac" />
+      <Show when={getViewMode("rbac") === "defender"}>
+        <PermissionModelDefender />
+      </Show>
+      <Show when={getViewMode("rbac") === "attacker"}>
+        <AttackPanel
+          tabId="rbac"
+          scenarios={rbacScenarios}
+          onRunScenario={async (s: AttackScenarioMeta) => {
+            const routeSuffix = ROUTE_BY_ID[s.id] ?? s.id.replace(/^rbac-/, "");
+            const res = await apiPost<AttackResult>(
+              `/api/rbac/attack/${routeSuffix}`,
+              {},
+              "attack-rbac"
+            );
+            if (!res.data) {
+              return {
+                scenarioId: s.id,
+                outcome: "error" as const,
+                startedAt: Date.now(),
+                finishedAt: Date.now(),
+                steps: [],
+                summaryJa: res.error ?? "実行エラー",
+                summary: res.error ?? "Execution error",
+              };
+            }
+            return res.data;
+          }}
+        />
+      </Show>
     </div>
   );
 }
