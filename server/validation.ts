@@ -51,16 +51,13 @@ export const jwtDecodeSchema = z.object({
 
 // ── JWT Attack Demo ──
 // E-2: 排他選択モードを廃止。各シナリオは 1 リクエストで両モード (脆弱+堅牢) を必ず並列実行する。
-//      `mode` / `victim.strict` 等のモード選択フィールドは削除。
-//      `originalToken` / `targetToken` / `forgedToken` / `injectedKid` はオプションで残す
-//      (テスト時にカスタム入力を渡せるようにするため)。
-//      未知のフィールドは zod デフォルトで silently 削除される。
-export const jwtAttackAlgNoneSchema = z.object({
-  originalToken: z.string().max(2048).optional(),
-});
+//      `mode` / `victim.strict` / `secretType` 等のモード選択フィールドは削除。
+//      `forgedToken` / `injectedKid` はテスト用カスタム入力としてオプションで残す
+//      (本体が実際に参照しているフィールドのみ。デッドフィールドは削除 — ROB-FIND-006)。
+//      未知のフィールドは zod デフォルトで silently 削除される (旧契約クライアント互換)。
+export const jwtAttackAlgNoneSchema = z.object({});
 
 export const jwtAttackWeakSecretSchema = z.object({
-  targetToken: z.string().max(2048).optional(),
   dictionarySize: z.number().int().min(1).max(200).default(100),
 });
 

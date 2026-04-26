@@ -40,7 +40,9 @@ export function _createTestDb(): Database.Database {
  * 本関数は idempotent (既に列が存在すれば何もしない)。
  */
 function migrateSchema(db: Database.Database) {
-  const tablesNeedingFlag = ["sessions", "oauth_codes", "oauth_tokens", "api_keys", "kerberos_tickets"] as const;
+  // SEC FINDING-6: refresh_tokens を追加。Phase 2 後続の session-token / oauth 攻撃が
+  // refresh_tokens テーブルを更新する場合の正常系除外フィルタに必須。
+  const tablesNeedingFlag = ["sessions", "oauth_codes", "oauth_tokens", "api_keys", "kerberos_tickets", "refresh_tokens"] as const;
   for (const tbl of tablesNeedingFlag) {
     const cols = db.prepare(`PRAGMA table_info(${tbl})`).all() as { name: string }[];
     if (!cols.some((c) => c.name === "is_attack_sim")) {
@@ -173,6 +175,7 @@ function initSchema(db: Database.Database) {
       expires_at TEXT NOT NULL,
       revoked INTEGER NOT NULL DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
+      is_attack_sim INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
 

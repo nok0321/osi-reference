@@ -156,13 +156,14 @@ tokenAuthRoutes.post("/refresh", async (c) => {
 
     // Atomically consume the refresh token: only succeeds if jti exists, not revoked, not expired.
     // UPDATE ... WHERE prevents TOCTOU race between concurrent refresh requests using the same token.
+    // SEC FINDING-6 (E-3 拡張): is_attack_sim = 0 で攻撃シミュレーション由来のトークンを正常系から除外。
     const consumeResult = db
       .prepare(
-        "UPDATE refresh_tokens SET revoked = 1 WHERE jti = ? AND revoked = 0 AND expires_at > datetime('now')"
+        "UPDATE refresh_tokens SET revoked = 1 WHERE jti = ? AND revoked = 0 AND expires_at > datetime('now') AND is_attack_sim = 0"
       )
       .run(decoded.jti);
     trace.addDbQuery({
-      sql: "UPDATE refresh_tokens SET revoked = 1 WHERE jti = ? AND revoked = 0 AND expires_at > datetime('now')",
+      sql: "UPDATE refresh_tokens SET revoked = 1 WHERE jti = ? AND revoked = 0 AND expires_at > datetime('now') AND is_attack_sim = 0",
       params: [decoded.jti],
       rows: [{ changes: consumeResult.changes }],
       ms: 0,
