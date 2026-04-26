@@ -283,8 +283,62 @@ safety-reviewed: true  # ← false から true に変更
 
 攻撃デモで生成されたデータが正常系デモに影響しないよう、以下を保証する。
 
-- 攻撃ルート (`/api/<area>/attack/*`) が更新するレコードには `is_attack_sim: boolean` フラグを設定する
+- 攻撃ルート (`/api/<area>/attack/*`) が更新するレコードには `is_attack_sim INTEGER NOT NULL DEFAULT 0` 列を設定する
 - 正常系ルート (`/api/password-auth/*` 等) のクエリは `WHERE is_attack_sim = 0` で攻撃データを除外する
+
+#### 5.3.1 E-3 対象テーブル一覧 (Phase 2 第一コミット時点)
+
+以下 6 テーブルに `is_attack_sim` 列を追加する。`server/db/schema.ts` の `migrateSchema()` が
+idempotent な ALTER TABLE で既存 `data.sqlite` にも遡及適用する (ROB-FIND-001 対応)。
+
+| テーブル | 攻撃シナリオで更新されるか | 備考 |
+|---------|--------------------------|------|
+| `sessions` | session-token 攻撃で更新 | `cleanExpiredSessions()` も `WHERE is_attack_sim = 0` で除外 |
+| `oauth_codes` | oauth 攻撃で更新 | TABLE_QUERIES にも WHERE 句追加 |
+| `oauth_tokens` | oauth 攻撃で更新 | 同上 |
+| `api_keys` | sso-apikey 攻撃で更新 | 同上 |
+| `kerberos_tickets` | kerberos 攻撃で更新 | 同上 |
+| `refresh_tokens` | session-token / oauth 攻撃で更新 (Phase 2 後続) | SEC FINDING-6 で追加。`token-auth.ts` UPDATE クエリにも WHERE 句追加 |
+
+#### 5.3.2 DDL (CREATE TABLE 時)
+
+```sql
+CREATE TABLE IF NOT EXISTS sessions (
+  -- ... 既存列 ...
+  is_attack_sim INTEGER NOT NULL DEFAULT 0
+);
+-- 同様に oauth_codes, oauth_tokens, api_keys, kerberos_tickets, refresh_tokens にも追加
+```
+
+#### 5.3.3 既存 DB へのマイグレーション (idempotent)
+
+```typescript
+// server/db/schema.ts
+function migrateSchema(db: Database.Database) {
+  const tablesNeedingFlag = [
+    "sessions", "oauth_codes", "oauth_tokens",
+    "api_keys", "kerberos_tickets", "refresh_tokens",
+  ] as const;
+  for (const tbl of tablesNeedingFlag) {
+    const cols = db.prepare(`PRAGMA table_info(${tbl})`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === "is_attack_sim")) {
+      db.exec(`ALTER TABLE ${tbl} ADD COLUMN is_attack_sim INTEGER NOT NULL DEFAULT 0`);
+    }
+  }
+}
+```
+
+#### 5.3.4 正常系ルート側の WHERE 句適用箇所
+
+| ファイル | 関数 / SQL | 用途 |
+|---------|----------|------|
+| `server/db/queries.ts` | `cleanExpiredSessions()` | `DELETE FROM sessions WHERE expires_at < datetime('now') AND is_attack_sim = 0` |
+| `server/index.ts` | `TABLE_QUERIES.sessions` 等 5 件 | `/api/debug/tables/:name` の SELECT に `WHERE is_attack_sim = 0` を付与 |
+| `server/routes/token-auth.ts` | `/refresh` の UPDATE | `WHERE jti = ? AND revoked = 0 AND expires_at > datetime('now') AND is_attack_sim = 0` |
+| `server/routes/session-auth.ts` | セッション SELECT/UPDATE/DELETE | `WHERE is_attack_sim = 0` を付与 (Phase 2 本体で session 攻撃導入時) |
+| `server/routes/oauth-sim.ts` | code/token SELECT | 同上 (Phase 2 本体で oauth 攻撃導入時) |
+| `server/routes/sso-apikey.ts` | api_keys SELECT | 同上 (Phase 2 本体で apikey 攻撃導入時) |
+| `server/routes/kerberos-sim.ts` | tickets SELECT | 同上 (Phase 2 本体で kerberos 攻撃導入時) |
 
 ---
 

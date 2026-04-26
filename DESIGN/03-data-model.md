@@ -253,19 +253,33 @@ export type AttackStepPayload =
 
 1回の攻撃シナリオ実行全体の結果を表す型。フロントエンドへのレスポンス `data` フィールドに含まれる。
 
+E-1 (Phase 2 第一コミット) で `TExtra` ジェネリックを導入し、シナリオ固有の追加フィールドを `extra` に格納する。
+デフォルト型 `Record<string, never>` は extra 不要なシナリオ向け。
+
+E-2 (Phase 2 第一コミット) で「5 ステップ完全形 + 両モード並列実行」設計に変更したため、
+`outcome` は実装上常に `"succeeded"` を返す (1 リクエストで脆弱+堅牢の両モードを実行し、
+ステップ 4=脆弱の `status: "success"` とステップ 5=堅牢の `status: "blocked"` の両方を返すため)。
+`outcome === "blocked"` / `"error"` は将来の単一モードシナリオ向けに型として残す。
+
 ```typescript
 /**
  * 攻撃シナリオ実行の全体結果。
  * POST /api/<area>/attack/<scenario-id> の成功レスポンスの data フィールドに格納される。
+ *
+ * @template TExtra  シナリオ固有の追加フィールド型 (E-1)。デフォルトは extra なし。
+ *                   利用例:
+ *                   - jwt-alg-none / jwt-signature-stripping → AttackResult (extra なし)
+ *                   - jwt-weak-secret-bruteforce → AttackResult<{ crackedSecret: string | null; attemptCount: number }>
+ *                   - jwt-kid-injection → AttackResult<{ kidResolved: string }>
  */
-export interface AttackResult {
+export interface AttackResult<TExtra = Record<string, never>> {
   /** シナリオ ID (命名規則は §3 を参照)。 */
   scenarioId: string;
 
   /**
    * 攻撃の最終判定。
-   * - succeeded : 攻撃成功 (脆弱性が再現された)
-   * - blocked   : 防御機構により阻止された
+   * - succeeded : シナリオ実行が完了 (E-2 では両モード実行のため常にこの値)
+   * - blocked   : 防御機構により阻止された (将来の単一モードシナリオ向け予約)
    * - error     : サーバーエラーや入力不正で実行不能
    */
   outcome: "succeeded" | "blocked" | "error";
@@ -276,25 +290,32 @@ export interface AttackResult {
   /** 攻撃終了 Unix ミリ秒。 */
   finishedAt: number;
 
-  /** 実行されたすべてのステップ (時系列順)。 */
+  /** 実行されたすべてのステップ (時系列順、5 ステップ完全形)。 */
   steps: AttackStep[];
 
   /**
-   * 攻撃に失敗した場合、何が阻止したかの識別子。
-   * 例: "jwt_signature_mismatch", "oauth_state_invalid", "replay_counter_exceeded"
+   * 堅牢モード (ステップ 5) で発動した防御識別子。
+   * 例: "jwt_signature_mismatch", "jwt_algorithms_allowlist", "jwt_kid_not_in_allowlist"
    */
   blockedBy?: string;
 
-  /** 教育用サマリーメッセージ (英語)。 */
+  /** 教育用サマリーメッセージ (英語、両モード結果の比較)。 */
   summary?: string;
 
-  /** 教育用サマリーメッセージ (日本語)。 */
+  /** 教育用サマリーメッセージ (日本語、両モード結果の比較)。 */
   summaryJa?: string;
 
   /** attack_log テーブルに挿入された行の ID。 */
   logId?: number;
+
+  /** シナリオ固有の追加フィールド (E-1 ジェネリック)。extra 不要シナリオでは undefined。 */
+  extra?: TExtra;
 }
 ```
+
+**ヘルパー経由での生成**: 全攻撃ルートは `server/utils/attack-runner.ts` の `runAttackScenario(c, { schema, scenarioId, tabId, handler })` を使い、
+ハンドラは 5 ステップ recordStep + `AttackRunResult<TExtra>` メタデータ ({ blockedBy, summary, summaryJa, extra?, payload? }) を返却する。
+ヘルパーが `AttackResult<TExtra>` への組み立て・finalize・二重例外保護を担う (SEC-12 / ROB-FIND-011 統合)。
 
 ### 1.5 AttackScenarioMeta
 
@@ -378,13 +399,13 @@ export interface AttackScenarioMeta {
 
 ### 1.6 ServerTrace 拡張
 
-既存の `ServerTrace` インターフェースに `attackSteps` フィールドを追加する。
-`attackSteps` は省略可能なため、攻撃デモ以外のルートに影響を与えない。
+既存の `ServerTrace` インターフェースに `attackSteps` および `isAttackMode` フィールドを追加する。
+両フィールドとも省略可能なため、攻撃デモ以外のルートに影響を与えない。
 
 ```typescript
 /**
- * 既存の ServerTrace に attackSteps を追加。
- * 全フィールドは省略可能 (攻撃デモ以外のルートは attackSteps を返さない)。
+ * 既存の ServerTrace に attackSteps と isAttackMode を追加。
+ * 全フィールドは省略可能 (攻撃デモ以外のルートは attackSteps / isAttackMode を返さない)。
  */
 export interface ServerTrace {
   dbQueries?: DbQuery[];
@@ -392,11 +413,19 @@ export interface ServerTrace {
   sessionOps?: SessionOp[];
   /** 攻撃シナリオのステップ一覧。攻撃デモエンドポイントのみ付与。 */
   attackSteps?: AttackStep[];
+  /** 攻撃デモエンドポイント (/attack/) から発生したトレースの場合 true。middleware が自動セット。 */
+  isAttackMode?: boolean;
 }
 ```
 
 > **注意**: `api-types.ts` の既存 `ServerTrace` 定義を上記で置き換える。
 > 既存フィールドはすべて `?` (省略可能) のままであるため後方互換性は維持される。
+
+**`addAttackStep` の timestamp 共有規約 (ROB-FIND-009)**:
+`TraceCollector.addAttackStep()` は `timestamp` を含む `AttackStep` を受け取れば既存値を尊重し、
+`Omit<AttackStep, "timestamp">` であれば `Date.now()` を自動付与する。
+`runAttackScenario` ヘルパーは 1 度計算した timestamp を `_trace.attackSteps` と
+`AttackResult.steps` の両方に同じ値で格納し、UI 上の時系列突合を容易にする。
 
 ---
 

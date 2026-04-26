@@ -247,12 +247,15 @@ const steps: AttackStep[] = [
 ];
 ```
 
-#### 4.1.5 期待結果
+#### 4.1.5 期待結果 (E-2: 5 ステップ完全形 + 両モード並列実行)
 
-| モード | outcome | HTTP status | blockedBy |
-|--------|---------|-------------|-----------|
-| lenient | `succeeded` | 200 | — |
-| strict | `blocked` | 401 | `"jwt_algorithms_allowlist"` |
+1 リクエストで両モード (脆弱+堅牢) を並列実行し、5 ステップを返す。
+`outcome` は両モードが揃って実行されたことを示すため常に `"succeeded"` (HTTP 200)。
+モード別の結果はステップ 4 (脆弱) と ステップ 5 (堅牢) の `status` で判別する。
+
+| HTTP status | outcome | ステップ 4 (exploit, 脆弱) | ステップ 5 (verify, 堅牢) | blockedBy |
+|------------|---------|---------------------------|---------------------------|-----------|
+| 200 | `succeeded` | `status: "success"` (alg=none 受理) | `status: "blocked"` (allowlist 拒否) | `"jwt_algorithms_allowlist"` |
 
 #### 4.1.6 防御策
 
@@ -264,40 +267,42 @@ const steps: AttackStep[] = [
 > 実環境では現代のほとんどの JWT ライブラリはデフォルトで none を拒否するよう更新されています。
 > このデモは `algorithms` オプション省略というアンチパターンが依然として危険であることを示します。
 
-#### 4.1.7 API 契約
+#### 4.1.7 API 契約 (E-2 / E-1)
 
 ```
 POST /api/jwt/attack/alg-none
 Content-Type: application/json
 
 Request:
-{
-  "originalToken"?: string,   // 省略時はシードトークンを使用
-  "victim": {
-    "algorithm": "HS256" | "RS256",
-    "strict": boolean           // true=許可リストあり / false=なし
-  }
-}
+{}    // 不要 (両モード並列実行のためモード選択フィールドなし。
+      //  未知のフィールドは zod が silently 削除し旧契約クライアント互換)
 
-Response:
+Response (200 OK 固定):
 {
+  "success": true,
   "data": {
     "scenarioId": "jwt-alg-none",
-    "outcome": "succeeded" | "blocked" | "error",
+    "outcome": "succeeded",        // E-2: 両モード実行のため常に succeeded
     "startedAt": number,
     "finishedAt": number,
-    "steps": AttackStep[],
-    "blockedBy"?: "jwt_algorithms_allowlist",
-    "summary"?: string,
-    "summaryJa"?: string,
-    "logId"?: number
+    "steps": AttackStep[],          // 5 ステップ完全形 (probe → tamper → forge → exploit → verify)
+    "blockedBy": "jwt_algorithms_allowlist",  // 堅牢モードの防御指標 (常に格納)
+    "summary": string,
+    "summaryJa": string,
+    "logId": number
+    // E-1: alg-none は extra なし (AttackResult のデフォルト Record<string, never>)
   },
   "_trace": {
     "cryptoOps": CryptoOp[],
-    "attackSteps": AttackStep[]
+    "attackSteps": AttackStep[],    // data.steps と同じ 5 件 (timestamp 共有)
+    "isAttackMode": true             // /attack/ パス検出で middleware が自動付与
   }
 }
 ```
+
+> **テスト用オプション (E01)**: 全攻撃ルートはハンドラ本体が実際に参照するフィールド (例: kid-injection の `injectedKid`、
+> signature-stripping の `forgedToken`) のみ schema にオプションで残す。alg-none は外部入力を必要としないため
+> リクエスト body は空でよい (旧契約の `originalToken` / `victim.strict` は ROB-FIND-006 で削除済み)。
 
 #### 4.1.8 `_trace` 内訳
 
@@ -459,12 +464,17 @@ const steps: AttackStep[] = [
 ];
 ```
 
-#### 4.2.5 期待結果
+#### 4.2.5 期待結果 (E-2: 5 ステップ完全形 + 両モード並列実行)
 
-| 秘密鍵種別 | outcome | cracked | 試行数 |
-|-----------|---------|---------|--------|
-| 弱い秘密鍵 (`"secret"` 等) | `succeeded` | 4 件目で一致 | 4 |
-| 強い秘密鍵 (ランダム38文字) | `blocked` | 一致なし | 100 |
+1 リクエストで弱秘密鍵 (`"secret"`) と強秘密鍵 (HS256_SECRET = 38 文字ランダム) を両方ループする。
+ステップ 4 (forge) で弱側のクラック結果を、ステップ 5 (verify) で強側の防御結果を返す。
+
+| HTTP status | outcome | ステップ 4 (forge, 弱秘密鍵) | ステップ 5 (verify, 強秘密鍵) | extra | blockedBy |
+|------------|---------|----------------------------|------------------------------|-------|-----------|
+| 200 | `succeeded` | `status: "success"` (1 件目=`"secret"` で一致) | `status: "blocked"` (全 100 件失敗) | `{ crackedSecret: "secret", attemptCount: 1 }` | `"strong_random_secret"` |
+
+> **ROB-FIND-010**: 強秘密鍵が辞書に含まれている場合 (HS256_SECRET 設定ミス) はステップ 5 を `status: "failed"`
+> + 警告ラベル「strong secret unexpectedly cracked at "X"」で記録し、防御失敗を可視化する。
 
 #### 4.2.6 防御策
 
@@ -477,7 +487,7 @@ const steps: AttackStep[] = [
 > オンラインブルートフォースは阻止されます。ただし HS256 のオフライン攻撃は
 > サーバーへの接続なしに実行できるため、弱い秘密鍵は致命的なリスクです。
 
-#### 4.2.7 API 契約
+#### 4.2.7 API 契約 (E-2 / E-1)
 
 ```
 POST /api/jwt/attack/weak-secret-bruteforce
@@ -485,35 +495,41 @@ Content-Type: application/json
 
 Request:
 {
-  "targetToken"?: string,     // 省略時はシードの弱秘密鍵署名トークンを使用
-  "secretType": "weak" | "strong",  // weak="secret" / strong=実際の HS256_SECRET
   "dictionarySize"?: number   // 辞書サイズ (デフォルト 100, 最大 200)
+                              // E-2: secretType / targetToken は廃止 (両モード並列実行のため不要)
 }
 
-Response:
+Response (200 OK 固定):
 {
+  "success": true,
   "data": {
     "scenarioId": "jwt-weak-secret-bruteforce",
-    "outcome": "succeeded" | "blocked",
+    "outcome": "succeeded",        // E-2: 両モード実行のため常に succeeded
     "startedAt": number,
     "finishedAt": number,
-    "steps": AttackStep[],
-    "crackedSecret"?: string,      // succeeded 時のみ
-    "attemptCount": number,
-    "blockedBy"?: "strong_random_secret",
-    "summary"?: string,
-    "summaryJa"?: string,
-    "logId"?: number
+    "steps": AttackStep[],          // 5 ステップ (intercept → probe → exploit → forge → verify)
+    "blockedBy": "strong_random_secret",  // 堅牢モード (強秘密鍵) の防御指標
+    "summary": string,
+    "summaryJa": string,
+    "logId": number,
+    // E-1: シナリオ固有の追加フィールドは extra 配下に格納
+    "extra": {
+      "crackedSecret": string | null,  // 弱秘密鍵側でクラックされた秘密鍵 (表示用、平文)
+      "attemptCount": number            // 弱秘密鍵側で何件目に発見されたか
+    }
   },
   "_trace": {
     "cryptoOps": CryptoOp[],
-    "attackSteps": AttackStep[]
+    "attackSteps": AttackStep[],
+    "isAttackMode": true
   }
 }
 ```
 
 > **簡略化の注意**: ブルートフォースループは **サーバー側** で実行し、結果のみを返す。
 > フロントエンドで実際の HMAC 計算ループは行わない (04-safety-guardrails.md §1.3 準拠)。
+> **SEC FINDING-5**: `extra.crackedSecret` は教育表示用に平文で返すが、
+> `attack_log.payload_json` には `maskSecret()` 経由でマスク化された値のみ保存する (DB 漏洩耐性)。
 
 #### 4.2.8 `_trace` 内訳
 
@@ -675,12 +691,15 @@ const steps: AttackStep[] = [
 ];
 ```
 
-#### 4.3.5 期待結果
+#### 4.3.5 期待結果 (E-2: 5 ステップ完全形 + 両モード並列実行)
 
-| モード | outcome | HTTP status | blockedBy |
-|--------|---------|-------------|-----------|
-| decode-only | `succeeded` | 200 | — |
-| verify | `blocked` | 401 | `"jwt_signature_mismatch"` |
+| HTTP status | outcome | ステップ 4 (exploit, decode-only) | ステップ 5 (verify, jwt.verify) | blockedBy |
+|------------|---------|-----------------------------------|-------------------------------|-----------|
+| 200 | `succeeded` | `status: "success"` (decode で受理) または `status: "failed"` (壊れたトークンで decode null) | `status: "blocked"` (署名不一致拒否) | `"jwt_signature_mismatch"` |
+
+> **ROB-FIND-003**: `forgedToken` が構造的に壊れている (Base64url 不正、ピリオド数不一致等) 場合、
+> `jwt.decode()` は null を返すため、ステップ 4 は `status: "failed"` で記録される。
+> 教育的整合性を保つため "success" と取り違えない。
 
 #### 4.3.6 防御策
 
@@ -689,36 +708,37 @@ const steps: AttackStep[] = [
 3. **TypeScript の型チェックを活用**: `verify()` の戻り値を `JwtPayload` 型として扱い、`decode()` の結果とは型を分ける
 4. **コードレビューで確認**: `jwt.decode(` の使用箇所を必ずレビューし、verify を省略していないか確認する
 
-#### 4.3.7 API 契約
+#### 4.3.7 API 契約 (E-2)
 
 ```
 POST /api/jwt/attack/signature-stripping
 Content-Type: application/json
-Authorization: Bearer <forged-token>
 
 Request:
 {
-  "forgedToken"?: string,   // 省略時は無効署名の Admin トークンを自動生成
-  "mode": "decode-only" | "verify"
+  "forgedToken"?: string    // テスト用オプション (E01)。省略時は無効署名の Admin トークンを
+                            // サーバ側で自動生成。E-2 で mode フィールドは廃止 (両モード並列実行)。
 }
 
-Response:
+Response (200 OK 固定):
 {
+  "success": true,
   "data": {
     "scenarioId": "jwt-signature-stripping",
-    "outcome": "succeeded" | "blocked",
+    "outcome": "succeeded",        // E-2: 両モード実行のため常に succeeded
     "startedAt": number,
     "finishedAt": number,
-    "steps": AttackStep[],
-    "decodedPayload"?: Record<string, unknown>,  // succeeded 時のみ
-    "blockedBy"?: "jwt_signature_mismatch",
-    "summary"?: string,
-    "summaryJa"?: string,
-    "logId"?: number
+    "steps": AttackStep[],          // 5 ステップ (probe → tamper → forge → exploit → verify)
+    "blockedBy": "jwt_signature_mismatch",
+    "summary": string,
+    "summaryJa": string,
+    "logId": number
+    // E-1: signature-stripping は extra なし
   },
   "_trace": {
     "cryptoOps": CryptoOp[],
-    "attackSteps": AttackStep[]
+    "attackSteps": AttackStep[],
+    "isAttackMode": true
   }
 }
 ```
@@ -898,12 +918,15 @@ const steps: AttackStep[] = [
 ];
 ```
 
-#### 4.4.5 期待結果
+#### 4.4.5 期待結果 (E-2: 5 ステップ完全形 + 両モード並列実行)
 
-| モード | outcome | HTTP status | blockedBy |
-|--------|---------|-------------|-----------|
-| vulnerable | `succeeded` | 200 | — |
-| allowlist | `blocked` | 401 | `"jwt_kid_not_in_allowlist"` |
+| HTTP status | outcome | ステップ 4 (exploit, 脆弱) | ステップ 5 (verify, allowlist) | extra | blockedBy |
+|------------|---------|---------------------------|---------------------------------|-------|-----------|
+| 200 | `succeeded` | `status: "success"` (kid をパスとして解決) | `status: "blocked"` (allowlist 拒否) | `{ kidResolved: "../public/attacker-key.pem" }` | `"jwt_kid_not_in_allowlist"` |
+
+> **SEC FINDING-3**: ハンドラは `injectedKid` を `sanitizeForDisplay()` で制御文字除去 + 長さ制限してから
+> `kidResolved` および `payload` 各所に格納する (XSS sink 防御深層)。
+> **ROB-FIND-007**: 許可リストは `ReadonlySet<string>` 型で TypeScript 静的に変更不能化。
 
 #### 4.4.6 防御策
 
@@ -916,7 +939,7 @@ const steps: AttackStep[] = [
 3. **DB クエリにはプレースホルダーを使う**: `WHERE kid = ?` のようにパラメータ化クエリを使用
 4. **kid を不透明な識別子として扱う**: パスや SQL に直接連結しない設計にする
 
-#### 4.4.7 API 契約
+#### 4.4.7 API 契約 (E-2 / E-1)
 
 ```
 POST /api/jwt/attack/kid-injection
@@ -924,27 +947,32 @@ Content-Type: application/json
 
 Request:
 {
-  "injectedKid"?: string,    // 省略時は "../public/attacker-key.pem" を使用
-  "mode": "vulnerable" | "allowlist"
+  "injectedKid"?: string    // テスト用オプション (E01)。省略時は "../public/attacker-key.pem"。
+                            // E-2 で mode フィールドは廃止 (両モード並列実行)。
 }
 
-Response:
+Response (200 OK 固定):
 {
+  "success": true,
   "data": {
     "scenarioId": "jwt-kid-injection",
-    "outcome": "succeeded" | "blocked",
+    "outcome": "succeeded",        // E-2: 両モード実行のため常に succeeded
     "startedAt": number,
     "finishedAt": number,
-    "steps": AttackStep[],
-    "kidResolved"?: string,    // vulnerable 時の実際に参照されたパス
-    "blockedBy"?: "jwt_kid_not_in_allowlist",
-    "summary"?: string,
-    "summaryJa"?: string,
-    "logId"?: number
+    "steps": AttackStep[],          // 5 ステップ (probe → tamper → forge → exploit → verify)
+    "blockedBy": "jwt_kid_not_in_allowlist",
+    "summary": string,
+    "summaryJa": string,
+    "logId": number,
+    // E-1: シナリオ固有の追加フィールドは extra 配下
+    "extra": {
+      "kidResolved": string         // sanitizeForDisplay で正規化済み
+    }
   },
   "_trace": {
     "cryptoOps": CryptoOp[],
-    "attackSteps": AttackStep[]
+    "attackSteps": AttackStep[],
+    "isAttackMode": true
   }
 }
 ```
@@ -986,17 +1014,27 @@ Response:
 
 ## 5. UI コンポーネント設計
 
-### 5.1 ディレクトリ構造
+### 5.1 ディレクトリ構造 (実装後の正本、Phase 1 + 第二コミットで確定)
 
 ```
-src/components/auth/attacks/jwt/
-├── JwtAttackView.tsx          # Attacker View のルートコンポーネント
-├── JwtAlgNoneAttack.tsx       # シナリオ A: alg=none
-├── JwtWeakSecretAttack.tsx    # シナリオ B: 弱秘密鍵ブルートフォース
-├── JwtSignatureStripping.tsx  # シナリオ C: 署名ストリッピング
-├── JwtKidInjection.tsx        # シナリオ D: kid インジェクション
-└── JwtAttackView.css          # Attacker View 専用スタイル
+src/components/auth/
+├── JwtInspector.tsx                    # Defender View ↔ Attacker View 切替の親コンポーネント
+└── attacks/
+    ├── shared/
+    │   ├── ViewModeToggle.tsx          # defender/attacker 切替トグル
+    │   ├── AttackPanel.tsx             # 汎用シナリオセレクタ + 実行ボタン + 並列ラベル表示
+    │   ├── AttackStepTimeline.tsx      # 5 ステップの時系列アニメーション
+    │   ├── AttackResultBanner.tsx      # outcome / blockedBy / summary バナー
+    │   ├── AttackDefensePanel.tsx      # 防御コードヒント + 既存ファイルリンク
+    │   └── EducationalWarningBanner.tsx
+    └── scenarios/
+        └── jwt-scenarios.ts            # AttackScenarioMeta[] (4 シナリオの静的メタ)
 ```
+
+> **D11 (旧設計との差分)**: シナリオ別コンポーネント (`JwtAlgNoneAttack.tsx` 等) は廃止。
+> `AttackPanel` が `jwt-scenarios.ts` から `AttackScenarioMeta[]` を受け取り、選択シナリオに対して
+> `runAttackScenario` ヘルパー経由のバックエンド呼び出しを共通化する。
+> シナリオ固有のフォーム要素 (例: `injectedKid` 入力) は `AttackPanel` 内のシナリオ別 props で抽象化する。
 
 ### 5.2 `JwtAttackView.tsx` の責務
 
@@ -1082,123 +1120,126 @@ interface JwtAttackScenarioProps {
 }
 ```
 
-### 5.4 各シナリオコンポーネントの共通構造
+### 5.4 AttackPanel の動作 (E-2: 並列ラベル表示)
 
-各シナリオコンポーネントは以下の構造を持つ:
+`AttackPanel` は選択シナリオに対して 1 リクエストで両モード並列実行を起動し、
+結果を 5 ステップの timeline + AttackScenarioMeta.modes の並列ラベルで対比表示する。
+モード排他選択トグルは廃止 (E-2)。
 
 ```typescript
-export default function JwtAlgNoneAttack(props: JwtAttackScenarioProps) {
-  const { t } = useI18n();
-  const [result, setResult] = createSignal<AttackResult | null>(null);
+// src/components/auth/attacks/shared/AttackPanel.tsx (簡略疑似コード)
+export default function AttackPanel(props: {
+  tabId: string;
+  scenarios: AttackScenarioMeta[];
+  onRunScenario: (s: AttackScenarioMeta) => Promise<AttackResult<unknown>>;
+}) {
+  const [selected, setSelected] = createSignal<AttackScenarioMeta | null>(null);
+  const [result, setResult] = createSignal<AttackResult<unknown> | null>(null);
   const [loading, setLoading] = createSignal(false);
-  // mode: "lenient" | "strict" (シナリオ A の場合)
-  const [victimMode, setVictimMode] = createSignal<"lenient" | "strict">("lenient");
 
   async function handleExecute() {
+    if (!selected()) return;
     setLoading(true);
-    const res = await apiPost<AttackResult>(
-      "/api/jwt/attack/alg-none",
-      { victim: { algorithm: "HS256", strict: victimMode() === "strict" } },
-      props.scopeId
-    );
-    if (res.data) setResult(res.data);
+    setResult(await props.onRunScenario(selected()!));
     setLoading(false);
   }
 
   return (
-    <div class="attack-scenario-panel">
-      {/* CWE/概要説明 */}
-      <p class="scenario-desc">
-        {t(
-          "これは CWE-345 の概念実証です。alg フィールドを none に書き換えることで、署名検証なしにサーバーを騙すことができる状況をシミュレーションします。",
-          "This is a proof-of-concept for CWE-345. Simulates bypassing signature verification by setting alg=none."
-        )}
-      </p>
+    <div class="attack-panel">
+      <EducationalWarningBanner />
+      {/* シナリオセレクタ */}
+      <For each={props.scenarios}>{(s) => (
+        <button onClick={() => setSelected(s)}>{s.nameJa}</button>
+      )}</For>
 
-      {/* モードトグル */}
-      <div class="demo-mode-toggle">
-        <button classList={{ active: victimMode() === "lenient" }}
-          onClick={() => setVictimMode("lenient")}>
-          {t("脆弱検証", "Lenient Verifier")}
-        </button>
-        <button classList={{ active: victimMode() === "strict" }}
-          onClick={() => setVictimMode("strict")}>
-          {t("堅牢検証", "Strict Verifier")}
-        </button>
-      </div>
-
-      {/* 実行ボタン */}
-      <button class="demo-submit" onClick={handleExecute} disabled={loading()}>
-        {t("攻撃を実行", "Execute Attack")}
+      {/* 実行ボタン (排他モードトグルなし — 1 クリックで両モード並列実行) */}
+      <button onClick={handleExecute} disabled={!selected() || loading()}>
+        {t("攻撃を実行 (両モード並列)", "Execute Attack (parallel both modes)")}
       </button>
 
-      {/* AttackStepTimeline: ステップ結果を時系列表示 */}
       <Show when={result()}>
+        {/* AttackScenarioMeta.modes の vulnerable/defensive ラベルを並列表示 */}
+        <div class="attack-mode-labels">
+          <For each={selected()?.modes}>{(m) => (
+            <span classList={{
+              "mode-vulnerable": m.kind === "vulnerable",
+              "mode-defensive": m.kind === "defensive",
+            }}>{m.labelJa}</span>
+          )}</For>
+        </div>
+        {/* ステップ 4 (脆弱) / ステップ 5 (堅牢) を並列ハイライト */}
         <AttackStepTimeline steps={result()!.steps} />
         <AttackResultBanner result={result()!} />
-        <AttackDefensePanel scenarioId="jwt-alg-none" />
+        <AttackDefensePanel scenario={selected()!} />
       </Show>
-
-      {/* DataFlowPanel: HTTP/_trace の詳細 */}
-      <DataFlowPanel scopeId={props.scopeId} />
     </div>
   );
 }
 ```
 
-### 5.5 `JwtInspector.tsx` への統合
+### 5.5 `JwtInspector.tsx` への統合 (Phase 1 で確定)
 
-既存の `JwtInspector.tsx` に `ViewModeToggle` を追加し、Attacker View への切り替えを実装する。
-`JwtInspector` コンポーネント関数の先頭に以下を追加する:
-
-```typescript
-// src/components/auth/JwtInspector.tsx への追加部分
-import { createSignal } from "solid-js";
-import { Show } from "solid-js";
-import ViewModeToggle from "../shared/ViewModeToggle";
-import JwtAttackView from "./attacks/jwt/JwtAttackView";
-
-// JwtInspector コンポーネント内に追加
-const [viewMode, setViewMode] = createSignal<"defender" | "attacker">("defender");
-```
-
-レンダー部分:
+`JwtInspector.tsx` は `viewMode` Signal (タブ別マップ管理) で defender/attacker を切替え、
+attacker 側で `AttackPanel` に `jwtScenarios` と `runAttackScenario` 経由のバックエンド呼び出しを渡す。
 
 ```tsx
-<div class="jwt-inspector">
-  <ViewModeToggle mode={viewMode()} onToggle={setViewMode} />
+import ViewModeToggle from "./attacks/shared/ViewModeToggle";
+import AttackPanel from "./attacks/shared/AttackPanel";
+import { jwtScenarios } from "./attacks/scenarios/jwt-scenarios";
+import { apiPost } from "../../api/client";
+import { getViewMode } from "../../state/security-state"; // タブ別マップ
+import type { AttackResult } from "../../../shared/api-types";
 
-  <Show when={viewMode() === "defender"}>
-    {/* 既存の Defender View コンテンツをそのまま表示 */}
-    {/* ... 既存の jwt-title-row, jwt-encoded, etc. ... */}
-  </Show>
-
-  <Show when={viewMode() === "attacker"}>
-    <JwtAttackView />
-  </Show>
-</div>
+return (
+  <div class="jwt-inspector">
+    <ViewModeToggle tabId="jwt" />
+    <Show when={getViewMode("jwt") === "defender"}>
+      {/* 既存 Defender View */}
+    </Show>
+    <Show when={getViewMode("jwt") === "attacker"}>
+      <AttackPanel
+        tabId="jwt"
+        scenarios={jwtScenarios}
+        onRunScenario={async (s) => {
+          const suffix = s.id.replace(/^jwt-/, "");
+          // E-2: body は不要 (両モード並列実行)。テスト用オプションのみシナリオ別に渡す。
+          const res = await apiPost<AttackResult<unknown>>(
+            `/api/jwt/attack/${suffix}`, {}, "attack-jwt",
+          );
+          return res.data ?? { /* error fallback */ };
+        }}
+      />
+    </Show>
+  </div>
+);
 ```
 
 ---
 
 ## 6. テスト要件
 
-### 6.1 バックエンド API テスト (`server/routes/attack-jwt.ts`)
+### 6.1 バックエンド API テスト (`server/__tests__/jwt-attack.test.ts`、E-2 後)
+
+E-2 で「1 リクエストで両モード並列実行」設計に変更したため、モード排他選択ベースのテストは廃止。
+代わりに 5 ステップ完全形 + extra ジェネリックの不変条件を `it.each` で網羅検証する。
 
 | テストケース | 期待結果 |
 |------------|---------|
-| `POST /api/jwt/attack/alg-none` `mode=lenient` | `outcome: "succeeded"`, HTTP 200 |
-| `POST /api/jwt/attack/alg-none` `mode=strict` | `outcome: "blocked"`, HTTP 401, `blockedBy: "jwt_algorithms_allowlist"` |
-| `POST /api/jwt/attack/alg-none` リクエストボディ不正 | HTTP 400 |
-| `POST /api/jwt/attack/weak-secret-bruteforce` `secretType=weak` | `outcome: "succeeded"`, `crackedSecret` 返却 |
-| `POST /api/jwt/attack/weak-secret-bruteforce` `secretType=strong` | `outcome: "blocked"`, `blockedBy: "strong_random_secret"` |
+| `POST /api/jwt/attack/alg-none` (body なし) | `outcome: "succeeded"`, HTTP 200, steps.length=5, ステップ 4=success/exploit, ステップ 5=blocked/verify, `blockedBy: "jwt_algorithms_allowlist"` |
+| `POST /api/jwt/attack/alg-none` (旧契約 victim/strict 等を含む) | 200 + 5 ステップ (zod が未知フィールドを silently 削除し旧契約クライアント互換) |
+| `POST /api/jwt/attack/weak-secret-bruteforce` `dictionarySize=100` | `outcome: "succeeded"`, `extra.crackedSecret="secret"`, `extra.attemptCount>=1`, `blockedBy: "strong_random_secret"` |
 | `POST /api/jwt/attack/weak-secret-bruteforce` `dictionarySize=201` (上限超過) | HTTP 400 |
-| `POST /api/jwt/attack/signature-stripping` `mode=decode-only` | `outcome: "succeeded"` |
-| `POST /api/jwt/attack/signature-stripping` `mode=verify` | `outcome: "blocked"`, `blockedBy: "jwt_signature_mismatch"` |
-| `POST /api/jwt/attack/kid-injection` `injectedKid=../public/attacker-key.pem` `mode=vulnerable` | `outcome: "succeeded"` |
-| `POST /api/jwt/attack/kid-injection` `injectedKid=../public/attacker-key.pem` `mode=allowlist` | `outcome: "blocked"`, `blockedBy: "jwt_kid_not_in_allowlist"` |
-| 全エンドポイント: レスポンスに `_trace.attackSteps` が含まれること | 検証 |
-| 全エンドポイント: `attack_log` テーブルに行が挿入されること | `SELECT COUNT(*)` で確認 |
+| `POST /api/jwt/attack/weak-secret-bruteforce` (body 省略) | デフォルト `dictionarySize=100` で 200 + 5 ステップ |
+| `POST /api/jwt/attack/signature-stripping` (body なし) | `outcome: "succeeded"`, 5 ステップ, `blockedBy: "jwt_signature_mismatch"` |
+| `POST /api/jwt/attack/signature-stripping` `forgedToken` 指定 | テスト用カスタムトークンで 200 + 5 ステップ (壊れたトークンならステップ 4 が `status: "failed"`) |
+| `POST /api/jwt/attack/kid-injection` `injectedKid="../public/attacker-key.pem"` | `outcome: "succeeded"`, `extra.kidResolved="../public/attacker-key.pem"`, `blockedBy: "jwt_kid_not_in_allowlist"` |
+| `POST /api/jwt/attack/kid-injection` (body なし) | デフォルト `injectedKid` で 200 + `extra.kidResolved` 設定 |
+| **E-1/E-2 不変条件 (`it.each` 4 シナリオ)**: outcome=succeeded, steps.length=5, `_trace.attackSteps.length=5`, extra の有無がジェネリック型と一致 (alg-none/signature-stripping は undefined / weak-secret/kid-injection は object) | 4 シナリオで網羅検証 |
+| 4 シナリオ全件: `data.logId > 0` かつ 4 件の logId が一意 | 検証 |
+| 全エンドポイント: `_trace.attackSteps` と `_trace.isAttackMode: true` が付与 | 検証 |
+| 本番ガード: `NODE_ENV=production` で 403 / `error: "...disabled in production"` | 検証 |
+| 本番ガード: 非攻撃ルート (`/api/jwt/sign`) は production でも 200 | 検証 |
+| **ヘルパー単体テスト (`server/utils/attack-runner.test.ts`)**: clipJson サイズ上限、maskSecret マスキング、sanitizeForDisplay 制御文字除去 | 11 件 |
 
 ### 6.2 フロントエンド コンポーネントテスト
 
@@ -1275,27 +1316,33 @@ const [viewMode, setViewMode] = createSignal<"defender" | "attacker">("defender"
 
 ## 8. 関連ファイル
 
-### 8.1 既存ファイル (参照・修正対象)
+### 8.1 既存ファイル (Phase 1 + Phase 2 第二コミット時点の正本)
 
 | ファイルパス | 変更種別 | 変更内容 |
 |------------|---------|---------|
-| `server/routes/jwt-ops.ts` | 参照 | `ALLOWED_ALGORITHMS`, `HS256_SECRET`, `/verify`, `/decode` の実装を攻撃デモの「防御側」として参照 |
-| `src/components/auth/JwtInspector.tsx` | 修正 | `ViewModeToggle` の追加、`viewMode` Signal の追加、`JwtAttackView` の条件描画 |
-| `shared/api-types.ts` | 参照 | `AttackStep`, `AttackResult`, `AttackStepPayload`, `ServerTrace` 型を使用 |
-| `server/middleware/trace-logger.ts` | 参照 | `addAttackStep()` メソッドを使用 |
-| `server/db/schema.ts` | 参照 | `attack_log` テーブルへの INSERT に使用 |
+| `server/routes/jwt-ops.ts` | 修正 | 既存の `/sign`/`/verify`/`/decode`/`/keys` (防御側) はそのまま、`/attack/*` 4 ルートを追加 (`runAttackScenario` ヘルパー経由) |
+| `src/components/auth/JwtInspector.tsx` | 修正 | `ViewModeToggle` (タブ別 viewMode) + `AttackPanel` の条件描画追加 |
+| `shared/api-types.ts` | 修正 | `AttackStep`, `AttackResult<TExtra>`, `AttackStepPayload`, `AttackScenarioMeta`, `ServerTrace.attackSteps`/`isAttackMode` 追加 |
+| `server/middleware/trace-logger.ts` | 修正 | `addAttackStep()` (timestamp 共有規約 ROB-FIND-009) + `isAttackMode` 自動付与 |
+| `server/db/schema.ts` | 修正 | `attack_log` テーブル + 6 テーブルに `is_attack_sim` 列 + idempotent migrateSchema |
+| `server/db/queries.ts` | 修正 | `insertAttackLog()` / `finalizeAttackLog()` ヘルパー、`cleanExpiredSessions()` に `is_attack_sim = 0` フィルタ |
+| `server/validation.ts` | 修正 | 4 シナリオの zod スキーマ (デッドフィールド削除済み: ROB-FIND-006) |
 
-### 8.2 新規作成ファイル
+### 8.2 Phase 0/1/2 で作成済みファイル
 
 | ファイルパス | 役割 |
 |------------|------|
-| `server/routes/attack-jwt.ts` | JWT 攻撃シナリオの全 API エンドポイント |
-| `src/components/auth/attacks/jwt/JwtAttackView.tsx` | Attacker View のルートコンポーネント |
-| `src/components/auth/attacks/jwt/JwtAlgNoneAttack.tsx` | シナリオ A のコンポーネント |
-| `src/components/auth/attacks/jwt/JwtWeakSecretAttack.tsx` | シナリオ B のコンポーネント |
-| `src/components/auth/attacks/jwt/JwtSignatureStripping.tsx` | シナリオ C のコンポーネント |
-| `src/components/auth/attacks/jwt/JwtKidInjection.tsx` | シナリオ D のコンポーネント |
-| `src/components/auth/attacks/jwt/JwtAttackView.css` | Attacker View 専用スタイル |
+| `server/utils/attack-runner.ts` | **runAttackScenario ヘルパー** (SEC-12 / ROB-FIND-011 統合) + `clipJson`/`maskSecret`/`sanitizeForDisplay` |
+| `server/utils/attack-runner.test.ts` | ヘルパー単体テスト (11 件) |
+| `server/__tests__/jwt-attack.test.ts` | 4 シナリオ統合テスト + E-1/E-2 不変条件 + 本番ガード (19 件) |
+| `server/middleware/attack-guard.ts` | 本番環境で `/attack/*` を 403 で無効化 |
+| `src/components/auth/attacks/shared/EducationalWarningBanner.tsx` | dismiss 不可の警告バナー |
+| `src/components/auth/attacks/shared/ViewModeToggle.tsx` | defender/attacker 切替 (タブ別マップ) |
+| `src/components/auth/attacks/shared/AttackPanel.tsx` | 汎用シナリオセレクタ + 並列ラベル表示 |
+| `src/components/auth/attacks/shared/AttackStepTimeline.tsx` | 5 ステップの時系列アニメーション |
+| `src/components/auth/attacks/shared/AttackResultBanner.tsx` | outcome / blockedBy / summary バナー |
+| `src/components/auth/attacks/shared/AttackDefensePanel.tsx` | codeHints / existingFileLinks 表示 |
+| `src/components/auth/attacks/scenarios/jwt-scenarios.ts` | `AttackScenarioMeta[]` (4 シナリオの静的メタ) |
 
 ### 8.3 設計書内参照
 
