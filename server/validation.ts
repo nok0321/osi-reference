@@ -226,6 +226,21 @@ export const rbacAttackAbacTamperSchema = z.object({
   action: z.enum(["read", "write"]).default("read"),
 });
 
+// ── Session/Token Attack Demo ──
+// E-2: 各シナリオは 1 リクエストで両モード (脆弱+堅牢) を必ず並列実行する。
+//      handler が実際に参照するフィールドのみ (ROB-FIND-006)。
+export const sessionAttackFixationSchema = z.object({});
+
+export const sessionAttackXssCookieTheftSchema = z.object({});
+
+// scenarioDelay: ユーザー指定の経過秒数。実際に verify ステップで適用される時刻オフセットは
+// handler 内で `Math.max(scenarioDelay, expiresInSec+1)` (expiresInSec=900) に正規化され、
+// 教育目的「有効期限超過リプレイの拒否」を確実に観測できる (SEC-1 / SEC-4)。
+// scenarioDelay 自体はユーザー意図値として extra.scenarioDelaySec に保持される。
+export const tokenAttackReplaySchema = z.object({
+  scenarioDelay: z.number().int().min(0).max(86400).default(960), // 0=即時, 960=16分(=有効期限超過)
+});
+
 // ── SSO / API Key ──
 export const ssoLoginSchema = z.object({ username: z.string().min(1) });
 export const ssoAccessServiceSchema = z.object({
