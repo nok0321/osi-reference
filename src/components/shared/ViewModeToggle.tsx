@@ -1,7 +1,7 @@
 import { onMount, untrack } from "solid-js";
 import { useI18n } from "../../i18n/context";
 import {
-  viewMode,
+  getViewMode,
   setViewMode,
   useViewModeSync,
   type ViewMode,
@@ -10,7 +10,6 @@ import type { AuthSubView } from "../../types/security";
 import "./ViewModeToggle.css";
 
 interface ViewModeToggleProps {
-  /** 将来の拡張用: タブ固有のトグル動作が必要な場合に使用する。現時点では未使用。 */
   tabId: AuthSubView;
 }
 
@@ -18,16 +17,14 @@ function ViewModeToggle(props: ViewModeToggleProps) {
   const { t } = useI18n();
   const { params, setParams } = useViewModeSync();
 
-  /* 初回マウント時のみ URL → Signal を片方向同期 */
   onMount(() => {
     const initial = untrack(() => params.view);
     const view = Array.isArray(initial) ? initial[0] : initial;
-    if (view === "attacker") setViewMode("attacker");
+    if (view === "attacker") setViewMode(props.tabId, "attacker");
   });
 
-  /* ボタン操作時に Signal と URL を同期更新 */
   function changeMode(next: ViewMode) {
-    setViewMode(next);
+    setViewMode(props.tabId, next);
     setParams({ view: next === "attacker" ? "attacker" : undefined });
   }
 
@@ -35,9 +32,9 @@ function ViewModeToggle(props: ViewModeToggleProps) {
     <div class="view-mode-toggle" role="group" aria-label={t("表示モード切替", "View mode toggle")}>
       <button
         class="view-mode-btn"
-        data-active={viewMode() === "defender"}
+        data-active={getViewMode(props.tabId) === "defender"}
         role="switch"
-        aria-checked={viewMode() === "defender"}
+        aria-checked={getViewMode(props.tabId) === "defender"}
         aria-label={t("防御者モードに切り替え", "Switch to Defender mode")}
         tabIndex={0}
         onClick={() => changeMode("defender")}
@@ -56,9 +53,9 @@ function ViewModeToggle(props: ViewModeToggleProps) {
 
       <button
         class="view-mode-btn view-mode-btn--attacker"
-        data-active={viewMode() === "attacker"}
+        data-active={getViewMode(props.tabId) === "attacker"}
         role="switch"
-        aria-checked={viewMode() === "attacker"}
+        aria-checked={getViewMode(props.tabId) === "attacker"}
         aria-label={t("攻撃者モードに切り替え", "Switch to Attacker mode")}
         tabIndex={0}
         onClick={() => changeMode("attacker")}

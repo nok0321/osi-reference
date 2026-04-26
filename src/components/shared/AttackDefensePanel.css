@@ -81,3 +81,54 @@
 .attack-defense-ref-link:hover {
   text-decoration: underline;
 }
+
+.attack-defense-codehints {
+  margin-top: 0.75rem;
+}
+
+.attack-defense-codehints-label,
+.attack-defense-files-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+
+.attack-defense-codehint {
+  margin-bottom: 0.5rem;
+}
+
+.attack-defense-codehint-label {
+  font-size: 0.8rem;
+  color: var(--color-attack-accent, var(--accent-color));
+  margin-bottom: 0.2rem;
+}
+
+.attack-defense-codehint-code {
+  background: var(--bg-secondary);
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  overflow-x: auto;
+  white-space: pre;
+  margin: 0;
+}
+
+.attack-defense-files {
+  margin-top: 0.5rem;
+}
+
+.attack-defense-files-list {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.attack-defense-files-list li {
+  margin-bottom: 0.25rem;
+}
+
+.attack-defense-file-desc {
+  color: var(--text-muted);
+}

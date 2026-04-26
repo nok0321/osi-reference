@@ -1,10 +1,20 @@
 import { createSignal } from "solid-js";
 import { useSearchParams } from "@solidjs/router";
 import type { AttackScenarioMeta, AttackResult } from "../../shared/api-types";
+import type { AuthSubView } from "../types/security";
 
 export type ViewMode = "defender" | "attacker";
 
-export const [viewMode, setViewMode] = createSignal<ViewMode>("defender");
+const [viewModeMap, setViewModeMap] = createSignal<Record<string, ViewMode>>({});
+
+export function getViewMode(tabId: AuthSubView): ViewMode {
+  return viewModeMap()[tabId] ?? "defender";
+}
+
+export function setViewMode(tabId: AuthSubView, mode: ViewMode): void {
+  setViewModeMap((prev) => ({ ...prev, [tabId]: mode }));
+}
+
 export const [selectedScenario, setSelectedScenario] = createSignal<AttackScenarioMeta | null>(null);
 export const [currentResult, setCurrentResult] = createSignal<AttackResult | null>(null);
 export const [attackRunning, setAttackRunning] = createSignal(false);
@@ -15,10 +25,6 @@ export function resetAttackState(): void {
   setAttackRunning(false);
 }
 
-/**
- * ViewModeToggle コンポーネント内の createEffect で URL ?view= と双方向同期するためのヘルパー。
- * useSearchParams はコンポーネント内でのみ呼べるため、このファイルでは返すだけにする。
- */
 export function useViewModeSync() {
   const [params, setParams] = useSearchParams();
   return { params, setParams };

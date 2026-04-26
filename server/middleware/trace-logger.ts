@@ -54,10 +54,10 @@ export async function traceMiddleware(ctx: Context, next: Next) {
   if (contentType.includes("application/json")) {
     const body = await ctx.res.json();
     const trace = collector.getTrace();
-    if (ctx.req.path.includes("/attack/")) {
-      trace.isAttackMode = true;
-    }
-    if (Object.keys(trace).length > 0) {
+    const isAttackPath = ctx.req.path.includes("/attack/");
+    const hasAnyOps = Object.keys(trace).length > 0;
+    if (hasAnyOps || isAttackPath) {
+      if (isAttackPath) trace.isAttackMode = true;
       body._trace = trace;
     }
     ctx.res = new Response(JSON.stringify(body), {

@@ -279,6 +279,25 @@ export function seedDb() {
   insertUser.run("oidc-user", demoPassword);
   insertUser.run("saml-user", demoPassword);
 
+  // Seed attack demo users (固定シードデータ、DESIGN/04 §5.1 SEC-2 対応)
+  const seedPwd = (pwd: string) => bcrypt.hashSync(pwd, 10);
+  const insertSeedUser = d.prepare(`INSERT INTO users (username, password_hash) VALUES (?, ?)`);
+  insertSeedUser.run("seed_alice", seedPwd("Passw0rd!"));
+  insertSeedUser.run("seed_bob", seedPwd("hunter2"));
+  insertSeedUser.run("seed_admin", seedPwd("admin123"));
+  insertSeedUser.run("attacker_charlie", seedPwd("charlie123"));
+
+  // ロール紐付け
+  const aliceId = (d.prepare("SELECT id FROM users WHERE username = ?").get("seed_alice") as { id: number }).id;
+  const bobId = (d.prepare("SELECT id FROM users WHERE username = ?").get("seed_bob") as { id: number }).id;
+  const adminId = (d.prepare("SELECT id FROM users WHERE username = ?").get("seed_admin") as { id: number }).id;
+  const charlieId = (d.prepare("SELECT id FROM users WHERE username = ?").get("attacker_charlie") as { id: number }).id;
+  const insertUR = d.prepare(`INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)`);
+  insertUR.run(aliceId, roleViewer.id);
+  insertUR.run(bobId, roleEditor.id);
+  insertUR.run(adminId, roleAdmin.id);
+  insertUR.run(charlieId, roleViewer.id);
+
   return { message: "Database seeded successfully" };
 }
 

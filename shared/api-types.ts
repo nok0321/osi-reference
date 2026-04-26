@@ -452,6 +452,26 @@ export interface AttackScenarioMeta {
   mitigation: string;
   mitigationJa: string;
   references?: string[];
+
+  /** 防御コード例。AttackDefensePanel で表示。 */
+  codeHints?: { lang: string; label: string; code: string }[];
+
+  /** 既存の防御実装ファイルへのポインタ。AttackDefensePanel で表示。 */
+  existingFileLinks?: { path: string; description: string }[];
+
+  /**
+   * 攻撃シナリオが「脆弱モード」と「堅牢モード」を持つ場合の選択肢。
+   * 未定義の場合は AttackPanel がモードトグルを表示せず、デフォルトボディで実行する。
+   */
+  modes?: {
+    id: string;
+    labelJa: string;
+    label: string;
+    /** API リクエストのボディ。onRunScenario 呼び出し時にこの body で API リクエストする。 */
+    body: Record<string, unknown>;
+    /** "vulnerable"=脆弱モード (赤系) / "defensive"=堅牢モード (緑系)。UI スタイルに使用。 */
+    kind: "vulnerable" | "defensive";
+  }[];
 }
 
 /** attack_log テーブルの行型。 */

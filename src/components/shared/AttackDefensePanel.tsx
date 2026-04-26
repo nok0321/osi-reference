@@ -11,8 +11,7 @@ interface AttackDefensePanelProps {
 
 /**
  * 攻撃完了後に展開される防御策解説パネル。
- * codeHints は Phase 1 で AttackScenarioMeta に追加予定のため、現フェーズでは
- * mitigation テキストと references のみ表示する。
+ * mitigation テキスト、codeHints (Phase 1 追加)、existingFileLinks (Phase 1 追加)、references を表示する。
  */
 function AttackDefensePanel(props: AttackDefensePanelProps) {
   const { t } = useI18n();
@@ -42,6 +41,40 @@ function AttackDefensePanel(props: AttackDefensePanelProps) {
                 {t(props.scenario!.mitigationJa, props.scenario!.mitigation)}
               </p>
             </div>
+
+            <Show when={(props.scenario!.codeHints ?? []).length > 0}>
+              <div class="attack-defense-codehints">
+                <div class="attack-defense-codehints-label">
+                  {t("実装例", "Implementation example")}
+                </div>
+                <For each={props.scenario!.codeHints ?? []}>
+                  {(hint) => (
+                    <div class="attack-defense-codehint">
+                      <div class="attack-defense-codehint-label">{hint.label}</div>
+                      <pre class="attack-defense-codehint-code mono"><code>{hint.code}</code></pre>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
+
+            <Show when={(props.scenario!.existingFileLinks ?? []).length > 0}>
+              <div class="attack-defense-files">
+                <div class="attack-defense-files-label">
+                  {t("関連実装ファイル", "Related implementation files")}
+                </div>
+                <ul class="attack-defense-files-list">
+                  <For each={props.scenario!.existingFileLinks ?? []}>
+                    {(link) => (
+                      <li>
+                        <code class="mono">{link.path}</code>
+                        <span class="attack-defense-file-desc"> — {link.description}</span>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </div>
+            </Show>
 
             <Show when={(props.scenario!.references ?? []).filter(r => /^https?:\/\//.test(r)).length > 0}>
               <div class="attack-defense-refs">

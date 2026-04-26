@@ -1,4 +1,4 @@
-import { createSignal, createEffect, Show } from "solid-js";
+import { createSignal, createEffect, Show, For } from "solid-js";
 import { useI18n } from "../../i18n/context";
 import type { AttackScenarioMeta, AttackResult } from "../../../shared/api-types";
 import type { AuthSubView } from "../../types/security";
@@ -13,7 +13,10 @@ import "./AttackPanel.css";
 interface AttackPanelProps {
   tabId: AuthSubView;
   scenarios: AttackScenarioMeta[];
-  onRunScenario: (scenario: AttackScenarioMeta) => Promise<AttackResult>;
+  onRunScenario: (
+    scenario: AttackScenarioMeta,
+    modeBody?: Record<string, unknown>,
+  ) => Promise<AttackResult>;
 }
 
 function AttackPanel(props: AttackPanelProps) {
@@ -25,6 +28,7 @@ function AttackPanel(props: AttackPanelProps) {
   const [attackResult, setAttackResult] = createSignal<AttackResult | null>(null);
   const [running, setRunning] = createSignal(false);
   const [defenseOpen, setDefenseOpen] = createSignal(false);
+  const [selectedModeId, setSelectedModeId] = createSignal<string>("");
 
   const selectedScenario = () =>
     props.scenarios.find((s) => s.id === selectedId()) ?? props.scenarios[0] ?? null;
@@ -35,6 +39,20 @@ function AttackPanel(props: AttackPanelProps) {
     const current = selectedId();
     if (scenarios.length > 0 && (!current || !scenarios.some(s => s.id === current))) {
       setSelectedId(scenarios[0].id);
+    }
+  });
+
+  /* シナリオ変更時に selectedModeId を最初のモード ID にリセット */
+  createEffect(() => {
+    const scenario = selectedScenario();
+    const modes = scenario?.modes;
+    if (modes && modes.length > 0) {
+      const current = selectedModeId();
+      if (!current || !modes.some((m) => m.id === current)) {
+        setSelectedModeId(modes[0].id);
+      }
+    } else {
+      setSelectedModeId("");
     }
   });
 
@@ -49,11 +67,12 @@ function AttackPanel(props: AttackPanelProps) {
   async function handleRunAttack() {
     const scenario = selectedScenario();
     if (!scenario || running()) return;
+    const mode = (scenario.modes ?? []).find((m) => m.id === selectedModeId());
     setRunning(true);
     setAttackResult(null);
     setDefenseOpen(false);
     try {
-      const result = await props.onRunScenario(scenario);
+      const result = await props.onRunScenario(scenario, mode?.body);
       setAttackResult(result);
     } finally {
       setRunning(false);
@@ -73,7 +92,30 @@ function AttackPanel(props: AttackPanelProps) {
           onSelect={setSelectedId}
         />
 
-        {/* 3. 実行ボタン */}
+        {/* 3. モードトグル (シナリオに modes が定義されている場合のみ) */}
+        <Show when={(selectedScenario()?.modes ?? []).length > 0}>
+          <div
+            class="attack-mode-toggle"
+            role="group"
+            aria-label={t("攻撃モード", "Attack mode")}
+          >
+            <For each={selectedScenario()!.modes!}>
+              {(mode) => (
+                <button
+                  class="attack-mode-btn"
+                  data-kind={mode.kind}
+                  data-active={selectedModeId() === mode.id}
+                  aria-pressed={selectedModeId() === mode.id}
+                  onClick={() => setSelectedModeId(mode.id)}
+                >
+                  {t(mode.labelJa, mode.label)}
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
+
+        {/* 4. 実行ボタン */}
         <button
           class="attack-run-button"
           disabled={running() || props.scenarios.length === 0}
@@ -86,7 +128,7 @@ function AttackPanel(props: AttackPanelProps) {
         </button>
 
         <div class="attack-panel-body">
-          {/* 4. タイムライン */}
+          {/* 5. タイムライン */}
           <div class="attack-panel-timeline">
             <AttackStepTimeline
               steps={attackResult()?.steps ?? []}
@@ -104,12 +146,12 @@ function AttackPanel(props: AttackPanelProps) {
           </div>
         </div>
 
-        {/* 5. 結果バナー */}
+        {/* 7. 結果バナー */}
         <Show when={attackResult() !== null}>
           <AttackResultBanner result={attackResult()!} />
         </Show>
 
-        {/* 7. DataFlowPanel */}
+        {/* 8. DataFlowPanel */}
         <DataFlowPanel scopeId={`attack-${props.tabId}`} defaultOpen={false} />
       </div>
     </div>

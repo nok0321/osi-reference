@@ -59,3 +59,43 @@
 .attack-panel-defense {
   min-width: 0;
 }
+
+.attack-mode-toggle {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.attack-mode-btn {
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--border-color, #444);
+  background: var(--bg-secondary, #1a1a1a);
+  color: var(--text-primary, #ddd);
+  cursor: pointer;
+  font-size: 0.8rem;
+  border-radius: var(--radius-sm, 4px);
+  transition: all 0.15s ease-out;
+  font-family: inherit;
+}
+
+.attack-mode-btn:hover:not([data-active="true"]) {
+  border-color: var(--accent-color, #29b6f6);
+}
+
+.attack-mode-btn[data-active="true"][data-kind="vulnerable"] {
+  background: var(--color-attack-danger, #c0392b);
+  color: #fff;
+  border-color: var(--color-attack-danger, #c0392b);
+}
+
+.attack-mode-btn[data-active="true"][data-kind="defensive"] {
+  background: var(--color-attack-success, #27ae60);
+  color: #fff;
+  border-color: var(--color-attack-success, #27ae60);
+}
+
+.attack-mode-btn:focus-visible {
+  outline: 2px solid var(--glow-color);
+  outline-offset: 2px;
+}

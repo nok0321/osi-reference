@@ -49,6 +49,31 @@ export const jwtDecodeSchema = z.object({
   token: z.string().min(1),
 });
 
+// ── JWT Attack Demo ──
+export const jwtAttackAlgNoneSchema = z.object({
+  originalToken: z.string().max(2048).optional(),
+  victim: z.object({
+    algorithm: z.enum(["HS256", "RS256"]).default("HS256"),
+    strict: z.boolean(),
+  }),
+});
+
+export const jwtAttackWeakSecretSchema = z.object({
+  targetToken: z.string().max(2048).optional(),
+  secretType: z.enum(["weak", "strong"]),
+  dictionarySize: z.number().int().min(1).max(200).default(100),
+});
+
+export const jwtAttackSignatureStrippingSchema = z.object({
+  forgedToken: z.string().max(2048).optional(),
+  mode: z.enum(["decode-only", "verify"]),
+});
+
+export const jwtAttackKidInjectionSchema = z.object({
+  injectedKid: z.string().max(256).optional(),
+  mode: z.enum(["vulnerable", "allowlist"]),
+});
+
 // ── Session Auth ──
 export const sessionLoginSchema = z.object({ username, password });
 
