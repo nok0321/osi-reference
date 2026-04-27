@@ -6,11 +6,26 @@ import { apiPost, apiGet } from "../../api/client";
 import type { KerberosAsData, KerberosTgsData, KerberosApData, KerberosTicketCacheData } from "../../types/auth-responses";
 import DataFlowPanel from "../shared/DataFlowPanel";
 import StepControl from "../shared/StepControl";
+import ViewModeToggle from "../shared/ViewModeToggle";
+import AttackPanel from "../shared/AttackPanel";
+import { getViewMode } from "../../state/attack-state";
+import { kerberosScenarios } from "./attacks/scenarios/kerberos-scenarios";
+import type { AttackResult } from "../../../shared/api-types";
 import "./KerberosFlow.css";
 
 const SCOPE = "kerberos";
 
-export default function KerberosFlow() {
+// scenarioId → route suffix のマッピング (api/kerberos/attack/<suffix>)
+// ROB-OIDC-9 同類: scenario meta に routeSuffix を持たせる代わりにコンポーネント内で解決。
+// scenarioId と suffix が揃っているため fallback (s.id.replace) は到達不能だが、
+// 将来 scenario id ミスマッチ時の silent 404 を防ぐため明示マップを優先する。
+const ROUTE_BY_ID: Record<string, string> = {
+  "kerberos-pass-the-ticket": "pass-the-ticket",
+  "kerberos-kerberoasting": "kerberoasting",
+  "kerberos-golden-ticket": "golden-ticket",
+};
+
+function KerberosFlowDefender() {
   const { t } = useI18n();
   const [stepIdx, setStepIdx] = createSignal(0);
 
@@ -338,6 +353,43 @@ function KerberosDemo() {
       </Show>
 
       <DataFlowPanel scopeId={SCOPE} defaultOpen={true} />
+    </div>
+  );
+}
+
+export default function KerberosFlow() {
+  return (
+    <div class="kerberos-flow-wrapper">
+      <ViewModeToggle tabId="kerberos" />
+      <Show when={getViewMode("kerberos") === "defender"}>
+        <KerberosFlowDefender />
+      </Show>
+      <Show when={getViewMode("kerberos") === "attacker"}>
+        <AttackPanel
+          tabId="kerberos"
+          scenarios={kerberosScenarios}
+          onRunScenario={async (s) => {
+            const routeSuffix = ROUTE_BY_ID[s.id] ?? s.id.replace(/^kerberos-/, "");
+            const res = await apiPost<AttackResult>(
+              `/api/kerberos/attack/${routeSuffix}`,
+              {},
+              "attack-kerberos",
+            );
+            if (!res.data) {
+              return {
+                scenarioId: s.id,
+                outcome: "error" as const,
+                startedAt: Date.now(),
+                finishedAt: Date.now(),
+                steps: [],
+                summaryJa: res.error ?? "実行エラー",
+                summary: res.error ?? "Execution error",
+              };
+            }
+            return res.data;
+          }}
+        />
+      </Show>
     </div>
   );
 }

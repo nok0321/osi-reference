@@ -261,6 +261,17 @@ export const samlAttackAssertionReplaySchema = z.object({});
 
 export const oidcAttackIdTokenSpoofSchema = z.object({});
 
+// ── Kerberos Attack Demo ──
+// E-2: 各シナリオは 1 リクエストで両モード (脆弱+堅牢) を必ず並列実行する。
+//      handler が実際に参照するフィールドのみ (ROB-FIND-006)。
+//      kerberoasting は弱 SPN (脆弱) と強 SPN (堅牢) の両方を 1 リクエストで実行する
+//      (ROB-KERB-1 修正)。targetSpn は廃止。
+export const kerberosAttackPassTheTicketSchema = z.object({});
+
+export const kerberosAttackKerberoastingSchema = z.object({});
+
+export const kerberosAttackGoldenTicketSchema = z.object({});
+
 // ── SSO / API Key ──
 export const ssoLoginSchema = z.object({ username: z.string().min(1) });
 export const ssoAccessServiceSchema = z.object({
