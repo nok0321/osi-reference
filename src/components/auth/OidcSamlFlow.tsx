@@ -10,11 +10,23 @@ import type { OidcAuthorizeData, OidcTokenData, SamlSsoData, OidcUserInfoData } 
 import { apiPost, apiGet } from "../../api/client";
 import DataFlowPanel from "../shared/DataFlowPanel";
 import StepControl from "../shared/StepControl";
+import ViewModeToggle from "../shared/ViewModeToggle";
+import AttackPanel from "../shared/AttackPanel";
+import { getViewMode } from "../../state/attack-state";
+import { oidcSamlScenarios } from "./attacks/scenarios/oidc-saml-scenarios";
+import type { AttackResult } from "../../../shared/api-types";
 import "./OidcSamlFlow.css";
 
 const SCOPE = "oidc-saml";
 
-export default function OidcSamlFlow() {
+// scenarioId → route suffix のマッピング (api/oidc/attack/<suffix>)
+const ROUTE_BY_ID: Record<string, string> = {
+  "saml-xsw": "saml-xsw",
+  "saml-assertion-replay": "saml-assertion-replay",
+  "oidc-id-token-spoofing": "id-token-spoof",
+};
+
+function OidcSamlFlowDefender() {
   const { t } = useI18n();
   const [mode, setMode] = createSignal<"oidc" | "saml">("oidc");
   const [oidcStep, setOidcStep] = createSignal(0);
@@ -429,6 +441,43 @@ function OidcSamlDemo() {
       </Show>
 
       <DataFlowPanel scopeId={SCOPE} defaultOpen={true} />
+    </div>
+  );
+}
+
+export default function OidcSamlFlow() {
+  return (
+    <div class="oidc-saml-flow-wrapper">
+      <ViewModeToggle tabId="oidc-saml" />
+      <Show when={getViewMode("oidc-saml") === "defender"}>
+        <OidcSamlFlowDefender />
+      </Show>
+      <Show when={getViewMode("oidc-saml") === "attacker"}>
+        <AttackPanel
+          tabId="oidc-saml"
+          scenarios={oidcSamlScenarios}
+          onRunScenario={async (s) => {
+            const routeSuffix = ROUTE_BY_ID[s.id] ?? s.id.replace(/^oidc-saml-/, "");
+            const res = await apiPost<AttackResult>(
+              `/api/oidc/attack/${routeSuffix}`,
+              {},
+              "attack-oidc-saml",
+            );
+            if (!res.data) {
+              return {
+                scenarioId: s.id,
+                outcome: "error" as const,
+                startedAt: Date.now(),
+                finishedAt: Date.now(),
+                steps: [],
+                summaryJa: res.error ?? "実行エラー",
+                summary: res.error ?? "Execution error",
+              };
+            }
+            return res.data;
+          }}
+        />
+      </Show>
     </div>
   );
 }

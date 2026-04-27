@@ -251,6 +251,16 @@ export const webauthnAttackVsPasswordPhishingSchema = z.object({});
 
 export const webauthnAttackChallengeReplaySchema = z.object({});
 
+// ── OIDC / SAML Attack Demo ──
+// E-2: 各シナリオは 1 リクエストで両モード (脆弱+堅牢) を必ず並列実行する。
+//      handler が実際に参照するフィールドのみ (ROB-FIND-006)。
+//      default() を付与することで body 省略可能にする (oauth/rbac/session/fido2 スキーマ参照)。
+export const samlAttackXswSchema = z.object({});
+
+export const samlAttackAssertionReplaySchema = z.object({});
+
+export const oidcAttackIdTokenSpoofSchema = z.object({});
+
 // ── SSO / API Key ──
 export const ssoLoginSchema = z.object({ username: z.string().min(1) });
 export const ssoAccessServiceSchema = z.object({
