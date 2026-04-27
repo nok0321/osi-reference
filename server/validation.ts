@@ -272,6 +272,17 @@ export const kerberosAttackKerberoastingSchema = z.object({});
 
 export const kerberosAttackGoldenTicketSchema = z.object({});
 
+// ── TLS Attack Demo ──
+// E-2: 各シナリオは 1 リクエストで両モード (脆弱+堅牢) を必ず並列実行する。
+//      旧仕様の `mitmEnabled` / `fallbackScsvEnabled` / `certValidationEnabled` /
+//      `serverAllowWeakCiphers` 等のモード選択フィールドは廃止 (ROB-KERB-1 教訓 / ROB-FIND-006)。
+//      handler 内で弱/強 (脆弱/堅牢) を双方並列計算する。
+export const tlsAttackVersionDowngradeSchema = z.object({});
+
+export const tlsAttackSelfSignedMitmSchema = z.object({});
+
+export const tlsAttackWeakCipherSchema = z.object({});
+
 // ── SSO / API Key ──
 export const ssoLoginSchema = z.object({ username: z.string().min(1) });
 export const ssoAccessServiceSchema = z.object({
