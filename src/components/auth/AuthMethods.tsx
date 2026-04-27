@@ -4,9 +4,24 @@ import { AUTH_METHODS, CATEGORY_COLORS } from "../../data/auth-methods";
 import type { AuthMethodInfo } from "../../types/security";
 import { apiPost, apiGet } from "../../api/client";
 import DataFlowPanel from "../shared/DataFlowPanel";
+import ViewModeToggle from "../shared/ViewModeToggle";
+import AttackPanel from "../shared/AttackPanel";
+import { getViewMode } from "../../state/attack-state";
+import { passwordScenarios } from "./attacks/scenarios/password-scenarios";
+import type { AttackResult } from "../../../shared/api-types";
 import "./AuthMethods.css";
 
 const SCOPE = "password-auth";
+
+// scenarioId → route suffix のマッピング (api/auth/password/attack/<suffix>)
+// ROB-OIDC-9 / ROB-RBAC-11 同類: scenario meta に routeSuffix を持たせる代わりに
+// コンポーネント内で解決。fallback (s.id.replace) は到達不能だが、scenario id ミスマッチ時の
+// silent 404 を防ぐため明示マップを優先する。
+const ROUTE_BY_ID: Record<string, string> = {
+  "password-rainbow-vs-bcrypt": "rainbow-vs-bcrypt",
+  "password-timing-string-compare": "timing-string-compare",
+  "password-bruteforce-no-rate-limit": "bruteforce-no-rate-limit",
+};
 
 function PasswordDemo() {
   const { t } = useI18n();
@@ -164,7 +179,7 @@ function PasswordDemo() {
   );
 }
 
-export default function AuthMethods() {
+function AuthMethodsDefender() {
   const { t } = useI18n();
   const [expandedId, setExpandedId] = createSignal<string | null>(null);
 
@@ -246,6 +261,43 @@ export default function AuthMethods() {
           }}
         </For>
       </div>
+    </div>
+  );
+}
+
+export default function AuthMethods() {
+  return (
+    <div class="auth-methods-wrapper">
+      <ViewModeToggle tabId="auth-methods" />
+      <Show when={getViewMode("auth-methods") === "defender"}>
+        <AuthMethodsDefender />
+      </Show>
+      <Show when={getViewMode("auth-methods") === "attacker"}>
+        <AttackPanel
+          tabId="auth-methods"
+          scenarios={passwordScenarios}
+          onRunScenario={async (s) => {
+            const routeSuffix = ROUTE_BY_ID[s.id] ?? s.id.replace(/^password-/, "");
+            const res = await apiPost<AttackResult>(
+              `/api/auth/password/attack/${routeSuffix}`,
+              {},
+              "attack-auth-methods",
+            );
+            if (!res.data) {
+              return {
+                scenarioId: s.id,
+                outcome: "error" as const,
+                startedAt: Date.now(),
+                finishedAt: Date.now(),
+                steps: [],
+                summaryJa: res.error ?? "実行エラー",
+                summary: res.error ?? "Execution error",
+              };
+            }
+            return res.data;
+          }}
+        />
+      </Show>
     </div>
   );
 }

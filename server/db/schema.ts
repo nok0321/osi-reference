@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -195,6 +196,18 @@ function initSchema(db: Database.Database) {
       user_session_id  TEXT
     );
 
+    -- Phase 2 第十コミット (password): rainbow テーブル攻撃の概念実証用固定辞書。
+    -- DESIGN/10 §3.2 / §4.1.7 準拠。教育専用テーブルのため is_attack_sim 列は不要 (全行が攻撃シミュ用)。
+    -- 10 件の弱パスワードに対する SHA-1 / MD5 ハッシュを事前計算済みとして保持する。
+    -- 実環境のレインボーテーブルは数百 GB だが、本デモは固定辞書 10 件で「ソルトなし高速ハッシュは
+    -- 逆引き可能」「bcrypt はソルト + 計算コストで逆引き不能」の対比を示す。
+    CREATE TABLE IF NOT EXISTS rainbow_table_sim (
+      hash       TEXT NOT NULL,
+      plaintext  TEXT NOT NULL,
+      algo       TEXT NOT NULL,
+      PRIMARY KEY (hash, algo)
+    );
+
     -- Indexes for frequently queried columns
     CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
@@ -214,6 +227,7 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_attack_log_scenario ON attack_log(scenario_id);
     CREATE INDEX IF NOT EXISTS idx_attack_log_tab ON attack_log(tab_id);
     CREATE INDEX IF NOT EXISTS idx_attack_log_started_at ON attack_log(started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_rainbow_table_sim_hash ON rainbow_table_sim(hash);
   `);
 }
 
@@ -237,7 +251,24 @@ export function seedDb() {
     DELETE FROM oauth_clients;
     DELETE FROM sessions;
     DELETE FROM users;
+    DELETE FROM rainbow_table_sim;
   `);
+
+  // Phase 2 第十コミット (password): rainbow_table_sim 教育用固定辞書 (DESIGN/10 §3.2)。
+  // 10 件の弱パスワードを SHA-1 / MD5 で事前計算済みハッシュとして保持する。
+  // 実 SHA-1/MD5 ハッシュ値を crypto モジュールで動的計算 — 文字列ハードコードによる
+  // ハッシュ写し間違いリスクを排除 (R-MEDIUM-1 と同パターンの SSoT 派生原則)。
+  const rainbowSeedPasswords = [
+    "password123", "hunter2", "letmein", "qwerty", "iloveyou",
+    "welcome1", "monkey", "trustno1", "dragon", "sunshine",
+  ] as const;
+  const insertRainbow = d.prepare(
+    `INSERT INTO rainbow_table_sim (hash, plaintext, algo) VALUES (?, ?, ?)`,
+  );
+  for (const pw of rainbowSeedPasswords) {
+    insertRainbow.run(crypto.createHash("sha1").update(pw).digest("hex"), pw, "sha1");
+    insertRainbow.run(crypto.createHash("md5").update(pw).digest("hex"), pw, "md5");
+  }
 
   // Seed OAuth client
   d.prepare(
