@@ -640,7 +640,7 @@ mfaTotpRoutes.post("/attack/otp-replay", (c) =>
         input: `secret="[REDACTED]", counter=${observedCounter} (T+0s)`,
         output: `code="${observedCode}", counterHex=${observedDetail.counterHex}`,
         algo: "HMAC-SHA1 + Dynamic Truncation (RFC 6238)",
-        detail: "攻撃者がショルダーハッキング等で観測した TOTP コードを取得 (シミュレーション)。",
+        detail: "攻撃者がショルダーサーフィン等で観測した TOTP コードを取得 (シミュレーション)。",
       });
 
       // ── Step 1: probe — 正規ユーザーの TOTP コードを観測
