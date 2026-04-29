@@ -330,3 +330,16 @@ export const apikeyHmacSchema = z.object({
   body: z.unknown(),
   signature: z.string().min(1),
 });
+
+// ── SSO / API Key Attack Demo ──
+// E-2: 各シナリオは 1 リクエストで両モード (脆弱+堅牢) を必ず並列実行する。
+//      handler が実際に参照するフィールドのみ (ROB-FIND-006)。
+//      DESIGN/19 §4.x.7 の `scenario` / `keyId` / `compareMethod` / `hmacLength` /
+//      `phase` / `includeTimestamp` / `includeNonce` / `delaySimulatedMs` 等の
+//      モード選択フィールドは仕様上 DEAD FIELD — handler 内で両モード固定実行する
+//      (ROB-KERB-1 教訓 / E-2 契約)。
+export const ssoAttackApikeyLeakageSchema = z.object({});
+
+export const ssoAttackHmacBypassSchema = z.object({});
+
+export const ssoAttackReplayNoTimestampSchema = z.object({});

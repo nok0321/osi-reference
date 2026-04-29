@@ -5,11 +5,24 @@ import type { SsoPattern, IdpInfo, ApiKeyPattern } from "../../types/security";
 import type { SsoLoginData, SsoAccessData, ApiKeyGenerateData, ApiKeyVerifyData } from "../../types/auth-responses";
 import { apiPost, apiGet } from "../../api/client";
 import DataFlowPanel from "../shared/DataFlowPanel";
+import ViewModeToggle from "../shared/ViewModeToggle";
+import AttackPanel from "../shared/AttackPanel";
+import { getViewMode } from "../../state/attack-state";
+import { ssoApikeyScenarios } from "./attacks/scenarios/sso-apikey-scenarios";
+import type { AttackResult } from "../../../shared/api-types";
 import "./SsoPatterns.css";
 
 const SCOPE = "sso-apikey";
 
-export default function SsoPatterns() {
+// シナリオ ID → ルートサフィックスのマッピング (passkey/oauth/rbac 同パターン)。
+// scenario meta の `id` は AttackScenarioMeta の SSoT のため、ここでは API ルート側のサフィックスのみ管理。
+const ROUTE_BY_ID: Record<string, string> = {
+  "apikey-leakage": "apikey-leakage",
+  "apikey-hmac-bypass": "hmac-bypass",
+  "apikey-replay-no-timestamp": "replay-no-timestamp",
+};
+
+function SsoPatternsDefender() {
   const { t } = useI18n();
   const [section, setSection] = createSignal<"sso" | "idp" | "apikey">("sso");
 
@@ -498,6 +511,43 @@ function ApiKeyDemo() {
         <button class="demo-submit" onClick={() => setActive(true)}>
           {t("API キーデモを開始", "Start API Key Demo")}
         </button>
+      </Show>
+    </div>
+  );
+}
+
+export default function SsoPatterns() {
+  return (
+    <div class="sso-patterns-wrapper">
+      <ViewModeToggle tabId="sso-idp-apikey" />
+      <Show when={getViewMode("sso-idp-apikey") === "defender"}>
+        <SsoPatternsDefender />
+      </Show>
+      <Show when={getViewMode("sso-idp-apikey") === "attacker"}>
+        <AttackPanel
+          tabId="sso-idp-apikey"
+          scenarios={ssoApikeyScenarios}
+          onRunScenario={async (s) => {
+            const routeSuffix = ROUTE_BY_ID[s.id] ?? s.id.replace(/^apikey-/, "");
+            const res = await apiPost<AttackResult>(
+              `/api/sso/attack/${routeSuffix}`,
+              {},
+              "attack-sso-idp-apikey",
+            );
+            if (!res.data) {
+              return {
+                scenarioId: s.id,
+                outcome: "error" as const,
+                startedAt: Date.now(),
+                finishedAt: Date.now(),
+                steps: [],
+                summaryJa: res.error ?? "実行エラー",
+                summary: res.error ?? "Execution error",
+              };
+            }
+            return res.data;
+          }}
+        />
       </Show>
     </div>
   );
