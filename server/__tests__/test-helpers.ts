@@ -17,6 +17,7 @@ import { tlsSimRoutes } from "../routes/tls-sim.js";
 import { ssoApikeyRoutes } from "../routes/sso-apikey.js";
 import { mfaTotpRoutes } from "../routes/mfa-totp.js";
 import { webauthnRoutes } from "../routes/webauthn.js";
+import { passkeyRoutes } from "../routes/passkey.js";
 import { oidcSamlSimRoutes } from "../routes/oidc-saml-sim.js";
 
 /** Create a fresh Hono app backed by an in-memory SQLite DB. */
@@ -45,6 +46,7 @@ export function createTestApp() {
   app.route("/api/sso", ssoApikeyRoutes);
   app.route("/api/mfa", mfaTotpRoutes);
   app.route("/api/webauthn", webauthnRoutes);
+  app.route("/api/passkey", passkeyRoutes);
   app.route("/api/oidc", oidcSamlSimRoutes);
 
   return { app, db };

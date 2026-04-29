@@ -9,9 +9,31 @@ import { apiPost, apiGet } from "../../api/client";
 import { startRegistration, startAuthentication, browserSupportsWebAuthnAutofill, WebAuthnAbortService } from "@simplewebauthn/browser";
 import DataFlowPanel from "../shared/DataFlowPanel";
 import StepControl from "../shared/StepControl";
+import ViewModeToggle from "../shared/ViewModeToggle";
+import AttackPanel from "../shared/AttackPanel";
+import { getViewMode } from "../../state/attack-state";
+import { passkeyScenarios } from "./attacks/scenarios/passkey-scenarios";
+import type { AttackResult } from "../../../shared/api-types";
 import "./PasskeyFlow.css";
 
 const SCOPE = "passkey";
+
+// SEC-FIDO2-7 同パターン: Passkey タブ独自の補足ノート文言。
+// E-2 契約で全シナリオ outcome="succeeded" のため AttackResultBanner が
+// 「攻撃成立」を赤帯表示してしまうが、本タブの教育意図は「Passkey の防御が機能する」
+// (DESIGN/21 §1.4) ことを示すこと。学習者の誤認を緩和するため attacker view 上部に表示。
+const PASSKEY_SPECIAL_NOTE = {
+  ja: "このタブは「攻撃が阻止されること」を確認するデモです。Passkey の多層防御 (origin バインディング、クラウドアカウント保護、CTAP 2.2 hybrid フロー) と、同期パスキーに固有のリスク前提条件を体験してください。",
+  en: "This tab demonstrates how attacks are BLOCKED. Experience Passkey's layered defenses (origin binding, cloud account protection, CTAP 2.2 hybrid flow) and the cloud-sync-specific risk preconditions.",
+};
+
+// シナリオ ID → ルートサフィックスのマッピング。
+// scenario meta の `id` は AttackScenarioMeta の SSoT のため、ここでは API ルート側のサフィックスのみ管理。
+const ROUTE_BY_ID: Record<string, string> = {
+  "passkey-phishing-origin-binding": "phishing-origin-binding",
+  "passkey-cloud-sync-compromise": "cloud-sync-compromise",
+  "passkey-cross-device-mitm": "cross-device-mitm",
+};
 
 function PasskeyDemo() {
   const { t } = useI18n();
@@ -329,7 +351,7 @@ function PasskeyDemo() {
   );
 }
 
-export default function PasskeyFlow() {
+function PasskeyFlowDefender() {
   const { t } = useI18n();
   const [ceremony, setCeremony] = createSignal<"register" | "auth">("register");
   const [regStep, setRegStep] = createSignal(0);
@@ -464,6 +486,58 @@ export default function PasskeyFlow() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+export default function PasskeyFlow() {
+  const { t } = useI18n();
+  return (
+    <div class="passkey-flow-wrapper">
+      <ViewModeToggle tabId="passkey" />
+      <Show when={getViewMode("passkey") === "defender"}>
+        <PasskeyFlowDefender />
+      </Show>
+      <Show when={getViewMode("passkey") === "attacker"}>
+        {/* SEC-FIDO2-7 同パターン: Passkey タブ独自の補足ノート (DESIGN/21 §1.4) */}
+        <div
+          class="passkey-special-note"
+          role="note"
+          style={{
+            background: "rgba(82,196,26,0.12)",
+            "border-left": "3px solid var(--color-success, #52c41a)",
+            padding: "8px 12px",
+            "margin-bottom": "12px",
+            "font-size": "0.9rem",
+          }}
+        >
+          {t(PASSKEY_SPECIAL_NOTE.ja, PASSKEY_SPECIAL_NOTE.en)}
+        </div>
+        <AttackPanel
+          tabId="passkey"
+          scenarios={passkeyScenarios}
+          onRunScenario={async (s) => {
+            const routeSuffix = ROUTE_BY_ID[s.id] ?? s.id.replace(/^passkey-/, "");
+            const res = await apiPost<AttackResult>(
+              `/api/passkey/attack/${routeSuffix}`,
+              {},
+              "attack-passkey",
+            );
+            if (!res.data) {
+              return {
+                scenarioId: s.id,
+                outcome: "error" as const,
+                startedAt: Date.now(),
+                finishedAt: Date.now(),
+                steps: [],
+                summaryJa: res.error ?? "実行エラー",
+                summary: res.error ?? "Execution error",
+              };
+            }
+            return res.data;
+          }}
+        />
+      </Show>
     </div>
   );
 }

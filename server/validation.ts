@@ -305,6 +305,18 @@ export const mfaAttackTimeWindowWideSchema = z.object({});
 
 export const mfaAttackSmsSwapSchema = z.object({});
 
+// ── Passkey Attack Demo ──
+// E-2: 各シナリオは 1 リクエストで両モード (脆弱+堅牢) を必ず並列実行する。
+//      handler が実際に参照するフィールドのみ (ROB-FIND-006)。
+//      DESIGN/21 §4.x の `username` / `fakeOrigin` / `deviceType` /
+//      `cloudAccountProtection` / `attackerLocation` 等のモード選択フィールドは
+//      仕様上 DEAD FIELD — handler 内で両モード固定実行する (ROB-KERB-1 教訓 / E-2 契約)。
+export const passkeyAttackPhishingOriginBindingSchema = z.object({});
+
+export const passkeyAttackCloudSyncCompromiseSchema = z.object({});
+
+export const passkeyAttackCrossDeviceMitmSchema = z.object({});
+
 // ── SSO / API Key ──
 export const ssoLoginSchema = z.object({ username: z.string().min(1) });
 export const ssoAccessServiceSchema = z.object({
