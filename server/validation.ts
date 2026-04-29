@@ -294,6 +294,17 @@ export const passwordAttackTimingStringCompareSchema = z.object({});
 
 export const passwordAttackBruteforceSchema = z.object({});
 
+// ── MFA Attack Demo ──
+// E-2: 各シナリオは 1 リクエストで両モード (脆弱+堅牢) を必ず並列実行する。
+//      handler が実際に参照するフィールドのみ (ROB-FIND-006)。
+//      モード選択フィールド (replayDefenseEnabled / windowSize / mfaChannel / simSwapSimulated)
+//      は仕様上 DEAD FIELD — handler 内で両モード固定実行する (ROB-KERB-1 教訓)。
+export const mfaAttackOtpReplaySchema = z.object({});
+
+export const mfaAttackTimeWindowWideSchema = z.object({});
+
+export const mfaAttackSmsSwapSchema = z.object({});
+
 // ── SSO / API Key ──
 export const ssoLoginSchema = z.object({ username: z.string().min(1) });
 export const ssoAccessServiceSchema = z.object({
