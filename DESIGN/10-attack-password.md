@@ -2,7 +2,7 @@
 title: パスワード認証 攻撃カタログ
 phase: design
 tab-id: auth-methods
-safety-reviewed: false
+safety-reviewed: true
 last-updated: 2026-04-26
 ---
 

@@ -2,7 +2,7 @@
 title: Kerberos 攻撃カタログ
 phase: design
 tab-id: kerberos
-safety-reviewed: false
+safety-reviewed: true
 last-updated: 2026-04-26
 ---
 

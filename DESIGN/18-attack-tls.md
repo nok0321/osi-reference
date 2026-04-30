@@ -2,7 +2,7 @@
 title: TLS 詳細 攻撃カタログ
 phase: design
 tab-id: tls-deep
-safety-reviewed: false
+safety-reviewed: true
 last-updated: 2026-04-26
 ---
 

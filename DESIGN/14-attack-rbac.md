@@ -2,7 +2,7 @@
 title: 攻撃デモカタログ — rbac (アクセス制御) 攻撃詳細
 phase: design
 last-updated: 2026-04-26
-safety-reviewed: false
+safety-reviewed: true
 ---
 
 ## 教育目的

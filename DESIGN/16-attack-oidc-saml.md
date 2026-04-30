@@ -2,7 +2,7 @@
 title: 攻撃デモカタログ — OIDC & SAML 攻撃詳細
 phase: design
 tab-id: oidc-saml
-safety-reviewed: false
+safety-reviewed: true
 last-updated: 2026-04-26
 ---
 

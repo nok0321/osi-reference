@@ -2,7 +2,7 @@
 title: 攻撃デモカタログ — SSO / API Key 攻撃詳細
 phase: design
 tab-id: sso-idp-apikey
-safety-reviewed: false
+safety-reviewed: true
 last-updated: 2026-04-26
 ---
 
