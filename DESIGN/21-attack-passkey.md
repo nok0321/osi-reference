@@ -242,31 +242,30 @@ Attacker View は `PasskeyFlow` のルートに `ViewModeToggle` を追加し、
 
 ```
 POST /api/passkey/attack/phishing-origin-binding
+Content-Type: application/json
+
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  攻撃者オリジン / 正規 origin / multiDevice/singleDevice の両分岐は全てサーバー側のシード値から生成される。
+  zod スキーマ: passkeyAttackPhishingOriginBindingSchema = z.object({}))
+
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に — 5 ステップ完全形で両モードを並列観察)
+  // data.steps: 5 ステップ完全形 (probe → tamper → forge → exploit → verify)
+  // data.blockedBy: "passkey_origin_validation_enforced" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (attackerOrigin / expectedOrigin / multiDeviceOriginRejected / singleDeviceOriginRejected 等)
 ```
 
-**リクエストボディ:**
+##### 期待結果
 
-```typescript
-{
-  username:   string;  // 攻撃対象 (デモ用: "seed_alice")
-  fakeOrigin: string;  // 攻撃者オリジン (例: "http://attacker.example")
-  deviceType: "multiDevice" | "singleDevice";  // 両種で同様に失敗することを示す
-}
-```
+E-2 契約: 1 リクエストで両モード (脆弱: origin 検証スキップを仮定、堅牢: expectedOrigin 厳密一致) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
 
-**サーバー側ステップ概要 (4ステップ):**
-
-| ステップ | kind | status | payload のポイント |
-|---------|------|--------|------------------|
-| S1 | `forge` | `success` | `fakeOrigin`, `deviceType`, "同期/デバイス固有問わず origin バインディングは同一" |
-| S2 | `probe` | `success` | `POST /api/passkey/auth/options` — `allowCredentials: []` (ユーザー名なし認証) |
-| S3 | `tamper` | `success` | `clientDataJSON_origin: fakeOrigin`, `mismatch: true`, rpIdHash 不一致も明示 |
-| S4 | `blocked` | `blocked` | `status: 400`, `"Origin mismatch: expected http://localhost:3000, got <fakeOrigin>"` |
-
-**レスポンス:**
-`outcome: "blocked"`, `steps.length === 4`,
-`blockedByJa: "origin バインディング (expectedOrigin 不一致: attacker.example ≠ localhost:3000)"`,
-`summaryJa: "防御が機能しました: origin バインディングがフィッシング攻撃を阻止しました。同期パスキーでもシングルデバイスパスキーでも、クレデンシャルの署名は RP ID に暗号的に紐付いており、別オリジンからは使用できません。"`
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"passkey_origin_validation_enforced"` (堅牢側 step 5: clientDataJSON.origin と expectedOrigin の不一致で拒否 — multiDevice/singleDevice 共通) |
+| `steps[3].status` (脆弱側 exploit: origin 検証スキップ) | `"success"` (attacker.example origin の Passkey 署名が受理される仮想シナリオ) |
+| `steps[4].status` (堅牢側 verify: expectedOrigin 厳密一致) | `"blocked"` |
 
 #### 4.1.4 防御解説パネルコンテンツ
 
@@ -354,41 +353,30 @@ await verifyAuthenticationResponse({
 
 ```
 POST /api/passkey/attack/cloud-sync-compromise
+Content-Type: application/json
+
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  cloudAccountProtection の weak/strong 分岐 / 同期パスキー / multiDevice デバイスタイプは全てサーバー側のシード値から生成される。
+  zod スキーマ: passkeyAttackCloudSyncCompromiseSchema = z.object({}))
+
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に — 5 ステップ完全形で両モードを並列観察)
+  // data.steps: 5 ステップ完全形 (probe → tamper → forge → exploit → verify)
+  // data.blockedBy: "cloud_account_strong_password_and_mfa_enforced" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (vulnerableCloudCompromised / strongCloudResisted / mfaEnabled / multiDeviceFlag 等)
 ```
 
-**リクエストボディ:**
+##### 期待結果
 
-```typescript
-{
-  cloudAccountProtection: "weak" | "strong";
-  // "weak": 弱パスワード + MFA なし のシナリオ
-  // "strong": 強パスワード + MFA あり のシナリオ
-}
-```
+E-2 契約: 1 リクエストで両モード (脆弱: クラウドアカウント弱パスワード + MFA なし、堅牢: 強パスワード + MFA (TOTP/FIDO2)) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
 
-**サーバー側ステップ概要 — `weak` の場合 (4ステップ):**
-
-| ステップ | kind | status | 内容 |
-|---------|------|--------|------|
-| S1 | `probe` | `success` | クラウドアカウントへの弱パスワード攻撃。`mfaEnabled: false` のシミュレーション |
-| S2 | `intercept` | `success` | クラウドアカウントに侵入、`multiDevice` の同期パスキーを発見 |
-| S3 | `replay` | `success` | 攻撃者デバイスへの同期パスキー複製 (概念的表現) |
-| S4 | `blocked` | `blocked` | クローン済みパスキーでも使用時の rpId origin 検証が機能 |
-
-**レスポンス (`weak`):**
-`outcome: "blocked"`, `side: "weak"`, `riskLevel: "high"`,
-`blockedByJa: "パスキー origin バインディング (パスキー自体は正規 RP ドメインを要求する)"`
-
-**サーバー側ステップ概要 — `strong` の場合 (2ステップ):**
-
-| ステップ | kind | status | 内容 |
-|---------|------|--------|------|
-| S1 | `probe` | `success` | クラウドアカウントへの侵害試行 |
-| S2 | `blocked` | `blocked` | 強パスワード + MFA (TOTP/FIDO2) が侵害を阻止 |
-
-**レスポンス (`strong`):**
-`outcome: "blocked"`, `side: "strong"`,
-`blockedByJa: "クラウドアカウントの強パスワード + MFA"`
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"cloud_account_strong_password_and_mfa_enforced"` (堅牢側 step 5: 強パスワード + MFA がクラウドアカウント侵害を阻止) |
+| `steps[3].status` (脆弱側 exploit: 弱パスワード + MFA なし) | `"success"` (クラウドアカウント侵害により同期パスキー領域に到達 — ただし RP origin バインディングは依然有効) |
+| `steps[4].status` (堅牢側 verify: 強パスワード + MFA) | `"blocked"` |
 
 #### 4.2.4 防御解説パネルコンテンツ
 
@@ -478,39 +466,30 @@ QR 中継 MITM を設計上阻止している。
 
 ```
 POST /api/passkey/attack/cross-device-mitm
+Content-Type: application/json
+
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  attackerLocation の remote/proximity 分岐 / BLE 近接要件 / tunnel key 暗号化は全てサーバー側のシード値から生成される。
+  zod スキーマ: passkeyAttackCrossDeviceMitmSchema = z.object({}))
+
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に — 5 ステップ完全形で両モードを並列観察)
+  // data.steps: 5 ステップ完全形 (probe → tamper → forge → exploit → verify)
+  // data.blockedBy: "ctap22_ble_proximity_and_tunnel_key_enforced" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (remoteBleOutOfRange / proximityTunnelKeyMismatch / qrInterceptedPrefix / hybridFlowOutcome 等)
 ```
 
-**リクエストボディ:**
+##### 期待結果
 
-```typescript
-{
-  attackerLocation: "remote" | "proximity";
-  // "remote": ネットワーク越し — BLE 近接不可で即座にブロック
-  // "proximity": 物理的に近くにいる — BLE は通過するが tunnel key で阻止
-}
-```
+E-2 契約: 1 リクエストで両モード (脆弱: ハイブリッドフローを bypass する仮想シナリオ、堅牢: BLE 近接 + tunnel key 暗号化) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
 
-**攻撃ステップ概要 — `remote` の場合 (4ステップ):**
-
-| ステップ | kind | status | 内容 |
-|---------|------|--------|------|
-| S1 | `intercept` | `success` | QR コード傍受 (スクリーンショット等)。payload に FIDO2 hybrid URL プレフィックス |
-| S2 | `forge` | `success` | 攻撃者デバイスが QR を読み取り接続試行。`bleRange: "out-of-range (>10m)"` |
-| S3 | `blocked` | `blocked` | BLE 近接確認失敗。リモート攻撃者はハンドシェイク不可 |
-| S4 | `blocked` | `blocked` | Tunnel Key 確立不可。BLE 未完了のため ECDH 鍵交換に進めない |
-
-**攻撃ステップ概要 — `proximity` の場合 (4ステップ):**
-
-| ステップ | kind | status | 内容 |
-|---------|------|--------|------|
-| S1 | `intercept` | `success` | QR コード傍受 (画面盗み見) |
-| S2 | `forge` | `success` | 攻撃者が BLE 圏内から接続試行。`bleRange: "in-range (<1m)"` |
-| S3 | `probe` | `success` | BLE 近接確認は通過 |
-| S4 | `blocked` | `blocked` | Tunnel Key 検証失敗。攻撃者は正規ブラウザの QR 生成時に導出された tunnel key を再現できない |
-
-**レスポンス共通フィールド:**
-`outcome: "blocked"`, `steps.length === 4`,
-`blockedByJa` は `remote` → `"BLE 近接要件"`, `proximity` → `"CTAP2.2 tunnel key 暗号化"`
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"ctap22_ble_proximity_and_tunnel_key_enforced"` (堅牢側 step 5: BLE 近接要件と CTAP2.2 tunnel key 暗号化が remote/proximity の両攻撃を阻止) |
+| `steps[3].status` (脆弱側 exploit: ハイブリッドフロー bypass 仮定) | `"success"` (QR 傍受で MITM 経路に到達する仮想シナリオ) |
+| `steps[4].status` (堅牢側 verify: BLE 近接 + tunnel key) | `"blocked"` |
 
 #### 4.3.4 防御解説パネルコンテンツ
 
@@ -752,18 +731,20 @@ export default function PasskeyAttackPanel() {
 
 ### 6.1 バックエンドエンドポイントテスト
 
-| テスト ID | テスト内容 | 期待値 |
-|----------|-----------|--------|
-| T-01 | `POST /api/passkey/attack/phishing-origin-binding` — 正常リクエスト (multiDevice) | `outcome: "blocked"`, `blockedBy` に "origin" を含む |
-| T-02 | `POST /api/passkey/attack/phishing-origin-binding` — `_trace.attackSteps` 検証 | `steps[3].status === "blocked"`, `steps[3].kind === "blocked"` |
-| T-03 | `POST /api/passkey/attack/phishing-origin-binding` — singleDevice でも同じ結果 | `outcome: "blocked"` (deviceType に依存しない) |
-| T-04 | `POST /api/passkey/attack/cloud-sync-compromise` — `weak` | `outcome: "blocked"`, `side: "weak"`, `riskLevel: "high"` |
-| T-05 | `POST /api/passkey/attack/cloud-sync-compromise` — `strong` | `outcome: "blocked"`, `side: "strong"` |
-| T-06 | `POST /api/passkey/attack/cross-device-mitm` — `remote` | `outcome: "blocked"`, `blockedBy` に "BLE" を含む, `steps.length === 4` |
-| T-07 | `POST /api/passkey/attack/cross-device-mitm` — `proximity` | `outcome: "blocked"`, `blockedBy` に "tunnel key" を含む, `steps.length === 4` |
-| T-08 | 全エンドポイント — `_trace.isAttackMode: true` | レスポンス内 `_trace.isAttackMode === true` |
-| T-09 | 全エンドポイント — HTTP 200 かつ `success: true` | HTTP 200, `success: true` |
-| T-10 | `POST /api/reset` 後の全エンドポイント動作確認 | 全エンドポイントが正常に `outcome: "blocked"` を返す |
+E-2 契約に準拠したテスト構成。各シナリオは 1 リクエストで両モード並列実行のため、`outcome === "succeeded"` 固定 + 5 ステップ完全形 + `blockedBy` で防御識別子を検証する。実装は `server/__tests__/passkey-attack.test.ts` (Phase 2 第七コミット 714589e)。
+
+| テストカテゴリ | 対象 | 期待値 |
+|------------|-----|--------|
+| E-2 不変条件 (it.each で 3 シナリオ共通) | `phishing-origin-binding` / `cloud-sync-compromise` / `cross-device-mitm` | `status === 200` / `outcome === "succeeded"` / `steps.length === 5` / `_trace.attackSteps.length === 5` / `_trace.isAttackMode === true` |
+| logId 一意性 | 全 3 シナリオを連続実行 | `attack_log` テーブルに 3 件の独立 logId を確認 |
+| 本番ガード | `NODE_ENV=production` で全 3 ルート | `status === 403` |
+| summaryJa prefix | 全 3 シナリオ | 「この実装は」または「このシナリオでは」または「防御が機能しました」で始まる |
+| シナリオ A: blockedBy | `phishing-origin-binding` | `"passkey_origin_validation_enforced"` |
+| シナリオ A: extra フィールド | `phishing-origin-binding` | `extra.attackerOrigin` / `extra.expectedOrigin` / `extra.multiDeviceOriginRejected === true` / `extra.singleDeviceOriginRejected === true` を含む (deviceType に依存しない origin 検証) |
+| シナリオ B: blockedBy | `cloud-sync-compromise` | `"cloud_account_strong_password_and_mfa_enforced"` |
+| シナリオ B: extra フィールド | `cloud-sync-compromise` | `extra.vulnerableCloudCompromised` (脆弱側) / `extra.strongCloudResisted` (堅牢側) / `extra.mfaEnabled` / `extra.multiDeviceFlag` を含む |
+| シナリオ C: blockedBy | `cross-device-mitm` | `"ctap22_ble_proximity_and_tunnel_key_enforced"` |
+| シナリオ C: extra フィールド | `cross-device-mitm` | `extra.remoteBleOutOfRange === true` / `extra.proximityTunnelKeyMismatch === true` / `extra.qrInterceptedPrefix` / `extra.hybridFlowOutcome` を含む |
 
 ### 6.2 フロントエンド動作テスト
 

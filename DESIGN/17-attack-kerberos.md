@@ -315,17 +315,15 @@ const steps: AttackStep[] = [
 
 #### 期待される結果 (AttackResult)
 
-```typescript
-const result: AttackResult = {
-  scenarioId: "kerberos-pass-the-ticket",
-  outcome: "succeeded",
-  startedAt: /* Unix ms */,
-  finishedAt: /* Unix ms */,
-  steps,
-  summary: "The stolen Service Ticket was accepted because the current simulation lacks replay detection via Authenticator nonce.",
-  summaryJa: "窃取されたサービスチケットが受け入れられました。現行シミュレーションは Authenticator nonce によるリプレイ検出を実装していないためです。",
-};
-```
+E-2 契約: 1 リクエストで両モード (脆弱: Authenticator nonce 検証なし、堅牢: replay cache + Authenticator nonce 検証) を並列実行し、5 ステップ完全形 (probe → tamper → forge → exploit → verify) を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"kerberos_authenticator_nonce_replay_cache_enforced"` (堅牢側 step 5: nonce キャッシュで再使用検出) |
+| `steps[3].status` (脆弱側 exploit: nonce 検証なし) | `"success"` (盗まれたサービスチケットを再利用できる) |
+| `steps[4].status` (堅牢側 verify: nonce replay cache) | `"blocked"` |
 
 #### 防御策
 
@@ -366,62 +364,17 @@ replayCache.add(authenticator.nonce);
 
 ```
 POST /api/kerberos/attack/pass-the-ticket
-```
+Content-Type: application/json
 
-**リクエスト**:
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  被害者プリンシパル / サービスプリンシパル / 盗まれたチケット / Authenticator nonce は全てサーバー側のシード値から生成される。
+  zod スキーマ: kerberosAttackPassTheTicketSchema = z.object({}))
 
-```json
-{
-  "victimPrincipal": "seed_alice",
-  "servicePrincipal": "http/web-server"
-}
-```
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `victimPrincipal` | `"seed_alice" \| "seed_bob"` | 必須 | 被害者のプリンシパル名 (固定シードのみ受け付ける) |
-| `servicePrincipal` | `string` | 必須 | 対象サービスプリンシパル (最大 64 文字) |
-
-サーバー側処理:
-1. seed_alice の TGT 取得 → サービスチケット取得 (正規フロー実行)
-2. 取得したサービスチケットを攻撃者として AP-REQ に送信
-3. AttackStep[] と AttackResult を構築して返却
-
-**レスポンス**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "kerberos-pass-the-ticket",
-    "outcome": "succeeded",
-    "startedAt": 1745592000000,
-    "finishedAt": 1745592000300,
-    "steps": [ /* AttackStep[] 上記 4 ステップ */ ],
-    "summary": "窃取されたサービスチケットが受け入れられました。...",
-    "summaryJa": "窃取されたサービスチケットが受け入れられました。..."
-  },
-  "_trace": {
-    "cryptoOps": [
-      {
-        "op": "decryptServiceTicket (stolen)",
-        "input": "<stolen encrypted ticket>",
-        "output": "principal=alice@OSI-DEMO.LOCAL, service=http/web-server@OSI-DEMO.LOCAL",
-        "algo": "AES-256-CBC",
-        "detail": "Service accepted the stolen ticket — no replay detection in current implementation"
-      }
-    ],
-    "dbQueries": [
-      {
-        "sql": "SELECT * FROM kerberos_tickets WHERE ticket_type='ServiceTicket' AND principal=? ORDER BY created_at DESC LIMIT 1",
-        "params": ["seed_alice"],
-        "ms": 1.1
-      }
-    ],
-    "attackSteps": [ /* AttackStep[] */ ],
-    "isAttackMode": true
-  }
-}
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形
+  // data.blockedBy: "kerberos_authenticator_nonce_replay_cache_enforced" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (stolenTicketPrefix / authenticatorNonce / vulnerableAuthSucceeded / replayCacheHit 等)
 ```
 
 #### _trace 内訳
@@ -589,17 +542,15 @@ const steps: AttackStep[] = [
 
 #### 期待される結果 (AttackResult)
 
-```typescript
-const result: AttackResult = {
-  scenarioId: "kerberos-kerberoasting",
-  outcome: "succeeded",  // weak-service については攻撃が成立
-  startedAt: /* Unix ms */,
-  finishedAt: /* Unix ms */,
-  steps,
-  summary: "The weak-password service account was cracked in the dictionary simulation. The strong-password account resisted.",
-  summaryJa: "弱パスワードのサービスアカウントは辞書シミュレーションで解読されました。強パスワードのアカウントは耐性を示しました。",
-};
-```
+E-2 契約: 1 リクエストで両モード (脆弱: 弱パスワード SPN サービスアカウント、堅牢: 20+ 文字ランダム + AES のみ + ローテーション運用) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"kerberos_kerberoasting_strong_service_account_password_enforced"` (堅牢側 step 5: gMSA 相当の強パスワードで辞書照合が成立しない) |
+| `steps[3].status` (脆弱側 exploit: 弱パスワード SPN) | `"success"` (固定辞書 20 件中 7 番目で `service123` を解読) |
+| `steps[4].status` (堅牢側 verify: 強パスワード SPN) | `"blocked"` |
 
 #### 防御策
 
@@ -638,63 +589,17 @@ const strongServicePassword = crypto.randomBytes(32).toString("base64");
 
 ```
 POST /api/kerberos/attack/kerberoasting
-```
+Content-Type: application/json
 
-**リクエスト**:
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  TGS 要求 / 弱・強パスワード SPN / 固定辞書 20 件 / ハッシュ照合は全てサーバー側のシード値から生成される。
+  zod スキーマ: kerberosAttackKerberoastingSchema = z.object({}))
 
-```json
-{
-  "requesterPrincipal": "seed_alice",
-  "targetSpn": "http/weak-service"
-}
-```
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `requesterPrincipal` | `"seed_alice" \| "seed_bob"` | 必須 | TGS を要求するドメインユーザー (固定シードのみ) |
-| `targetSpn` | `"http/weak-service" \| "http/strong-service"` | 必須 | 攻撃対象の SPN (固定シードのみ受け付ける) |
-
-サーバー側処理:
-1. `requesterPrincipal` で TGT 取得 (seed パスワード使用)
-2. `targetSpn` に対して TGS 要求
-3. `kerberoasting_services` テーブルから対象 SPN のパスワードを参照
-4. 固定辞書 20 件との照合シミュレーション (Hashcat は省略)
-5. AttackStep[] と AttackResult を返却
-
-**レスポンス** (弱パスワード SPN 攻撃成立時):
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "kerberos-kerberoasting",
-    "outcome": "succeeded",
-    "startedAt": 1745592000000,
-    "finishedAt": 1745592000450,
-    "steps": [ /* AttackStep[] 上記 3 ステップ */ ],
-    "summary": "弱パスワードのサービスアカウントは辞書シミュレーションで解読されました。"
-  },
-  "_trace": {
-    "cryptoOps": [
-      {
-        "op": "kerberoasting_hash_sim",
-        "input": "spn=http/weak-service, etype=23(RC4)",
-        "output": "$krb5tgs$23$*http/weak-service@OSI-DEMO.LOCAL*...(抽出済み)",
-        "algo": "RC4-HMAC (etype 23) シミュレーション",
-        "detail": "Hashcat の実装は省略 — 固定辞書 20 件との照合で 7 番目に一致"
-      }
-    ],
-    "dbQueries": [
-      {
-        "sql": "SELECT password FROM kerberoasting_services WHERE spn = ? AND is_attack_sim = 1",
-        "params": ["http/weak-service"],
-        "ms": 0.5
-      }
-    ],
-    "attackSteps": [ /* AttackStep[] */ ],
-    "isAttackMode": true
-  }
-}
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形
+  // data.blockedBy: "kerberos_kerberoasting_strong_service_account_password_enforced" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (weakSpn / strongSpn / crackedPlaintext / dictionaryHitIndex / strongPasswordEntropy 等)
 ```
 
 #### _trace 内訳
@@ -885,17 +790,15 @@ const steps: AttackStep[] = [
 
 #### 期待される結果 (AttackResult)
 
-```typescript
-const result: AttackResult = {
-  scenarioId: "kerberos-golden-ticket",
-  outcome: "succeeded",
-  startedAt: /* Unix ms */,
-  finishedAt: /* Unix ms */,
-  steps,
-  summary: "A forged TGT for 'administrator' was accepted by the KDC because the krbtgt key was used correctly. The KDC cannot verify TGT authenticity without PAC validation.",
-  summaryJa: "'administrator' の偽造 TGT が KDC に受け入れられました。krbtgt 鍵が正しく使われているため KDC は PAC 検証なしに TGT の正当性を確認できません。",
-};
-```
+E-2 契約: 1 リクエストで両モード (脆弱: PAC 検証なし + krbtgt 単発リセット未実施、堅牢: krbtgt 2回リセット + PAC 検証 + DC Tier 0 分離) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"kerberos_krbtgt_double_reset_and_pac_validation_enforced"` (堅牢側 step 5: krbtgt 2 回リセットと PAC 検証で偽造 TGT を無効化) |
+| `steps[3].status` (脆弱側 exploit: PAC 検証なし) | `"success"` ('administrator' の偽造 TGT が KDC に受理され、サービスチケット取得まで成立) |
+| `steps[4].status` (堅牢側 verify: krbtgt rotation + PAC validation) | `"blocked"` |
 
 #### 防御策
 
@@ -940,70 +843,17 @@ krbtgt アカウントの管理
 
 ```
 POST /api/kerberos/attack/golden-ticket
-```
+Content-Type: application/json
 
-**リクエスト**:
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  偽造プリンシパル / 偽造 TGT の AES 暗号化 / KDC マスター鍵は全てサーバー側のシード値から生成される。
+  zod スキーマ: kerberosAttackGoldenTicketSchema = z.object({}))
 
-```json
-{
-  "forgedPrincipal": "administrator",
-  "servicePrincipal": "http/web-server"
-}
-```
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `forgedPrincipal` | `"administrator" \| "seed_admin"` | 必須 | 偽造するプリンシパル名 (固定リストのみ受け付ける) |
-| `servicePrincipal` | `string` | 必須 | アクセス先のサービスプリンシパル (最大 64 文字) |
-
-サーバー側処理:
-1. `SEED_KDC_MASTER_KEY_DEMO` (既知の KDC_SECRET) を使って偽造 TGT を生成
-   (`forgedPrincipal` + 遠未来の validUntil + `FORGED_BY_ATTACKER` フラグ)
-2. 偽造 TGT を TGS-REQ エンドポイントに送信してサービスチケット取得を試みる
-3. サービスチケット取得成功を AttackStep として記録
-4. AttackStep[] と AttackResult を返却
-
-**レスポンス**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "kerberos-golden-ticket",
-    "outcome": "succeeded",
-    "startedAt": 1745592000000,
-    "finishedAt": 1745592000500,
-    "steps": [ /* AttackStep[] 上記 4 ステップ */ ],
-    "summary": "'administrator' の偽造 TGT が KDC に受け入れられました。..."
-  },
-  "_trace": {
-    "cryptoOps": [
-      {
-        "op": "forgeGoldenTicket",
-        "input": "principal=administrator, krbtgtKey=SEED_KDC_MASTER_KEY_DEMO",
-        "output": "forged TGT encrypted with krbtgt key (administrator@OSI-DEMO.LOCAL, validUntil=2030-...)",
-        "algo": "AES-256-CBC",
-        "detail": "TGT forged without KDC involvement — KDC cannot distinguish from legitimate TGT"
-      },
-      {
-        "op": "decryptTGT (forged TGT accepted)",
-        "input": "<forged TGT encrypted data>",
-        "output": "principal=administrator@OSI-DEMO.LOCAL (FORGED)",
-        "algo": "AES-256-CBC",
-        "detail": "KDC decrypts and accepts the forged TGT because krbtgt key matches"
-      }
-    ],
-    "dbQueries": [
-      {
-        "sql": "INSERT INTO kerberos_tickets (ticket_type, principal, realm, ...) VALUES (?, ?, ?, ...)",
-        "params": ["TGT", "administrator", "OSI-DEMO.LOCAL"],
-        "ms": 1.3
-      }
-    ],
-    "attackSteps": [ /* AttackStep[] */ ],
-    "isAttackMode": true
-  }
-}
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形
+  // data.blockedBy: "kerberos_krbtgt_double_reset_and_pac_validation_enforced" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (forgedPrincipal / forgedTgtValidUntil / krbtgtRotationCount / pacValidationResult 等)
 ```
 
 #### _trace 内訳
@@ -1131,20 +981,20 @@ interface KerberosTicketVisualizerProps {
 
 ### 6.1 ユニットテスト (バックエンドハンドラ)
 
-対象ファイル: `server/routes/kerberos-sim.ts (attack サブパス追加)` (新規)
+E-2 契約に準拠したテスト構成。各シナリオは 1 リクエストで両モード並列実行のため、`outcome === "succeeded"` 固定 + 5 ステップ完全形 + `blockedBy` で防御識別子を検証する。実装は `server/__tests__/kerberos-attack.test.ts`。
 
-| テスト ID | 検証内容 | 期待結果 |
-|---------|---------|---------|
-| `kerb-atk-01` | `POST /attack/pass-the-ticket` に有効なシードプリンシパルを送信 | `outcome: "succeeded"`, step-3 の `status: "success"`, AP-REP で `authenticated: true` |
-| `kerb-atk-02` | `POST /attack/pass-the-ticket` に存在しないプリンシパルを送信 | `400 Bad Request`, バリデーションエラー |
-| `kerb-atk-03` | `POST /attack/kerberoasting` に `targetSpn: "http/weak-service"` を送信 | `outcome: "succeeded"`, `crackedPassword: "service123"` が含まれる |
-| `kerb-atk-04` | `POST /attack/kerberoasting` に `targetSpn: "http/strong-service"` を送信 | `outcome: "blocked"`, `crackedAt: null` |
-| `kerb-atk-05` | `POST /attack/kerberoasting` に固定リスト外の SPN を送信 | `400 Bad Request` |
-| `kerb-atk-06` | `POST /attack/golden-ticket` に `forgedPrincipal: "administrator"` を送信 | `outcome: "succeeded"`, step-2 の payload に `forged: true` フラグ |
-| `kerb-atk-07` | `POST /attack/golden-ticket` に固定リスト外のプリンシパルを送信 | `400 Bad Request` |
-| `kerb-atk-08` | 本番環境 (`NODE_ENV=production`) でいずれかの攻撃エンドポイントに送信 | `403 Forbidden` |
-| `kerb-atk-09` | 各攻撃エンドポイントのレスポンスに `_trace.isAttackMode: true` が含まれる | `true` |
-| `kerb-atk-10` | `POST /api/reset` 実行後に `kerberoasting_services` テーブルが初期シード状態に戻る | 2 件のシードレコードのみ存在 |
+| テストカテゴリ | 対象 | 期待値 |
+|------------|-----|--------|
+| E-2 不変条件 (it.each で 3 シナリオ共通) | `pass-the-ticket` / `kerberoasting` / `golden-ticket` | `status === 200` / `outcome === "succeeded"` / `steps.length === 5` / `_trace.attackSteps.length === 5` / `_trace.isAttackMode === true` |
+| logId 一意性 | 全 3 シナリオを連続実行 | `attack_log` テーブルに 3 件の独立 logId を確認 |
+| 本番ガード | `NODE_ENV=production` で全 3 ルート | `status === 403` |
+| summaryJa prefix | 全 3 シナリオ | 「この実装は」または「このシナリオでは」で始まる |
+| シナリオ A: blockedBy | `pass-the-ticket` | `"kerberos_authenticator_nonce_replay_cache_enforced"` |
+| シナリオ A: extra フィールド | `pass-the-ticket` | `extra.stolenTicketPrefix` / `extra.authenticatorNonce` / `extra.replayCacheHit === true` を含む |
+| シナリオ B: blockedBy | `kerberoasting` | `"kerberos_kerberoasting_strong_service_account_password_enforced"` |
+| シナリオ B: extra フィールド | `kerberoasting` | `extra.weakSpn` / `extra.strongSpn` / `extra.crackedPlaintext` / `extra.dictionaryHitIndex` / `extra.strongPasswordEntropy` を含む |
+| シナリオ C: blockedBy | `golden-ticket` | `"kerberos_krbtgt_double_reset_and_pac_validation_enforced"` |
+| シナリオ C: extra フィールド | `golden-ticket` | `extra.forgedPrincipal` / `extra.forgedTgtValidUntil` / `extra.krbtgtRotationCount` / `extra.pacValidationResult === "rejected"` を含む |
 
 ### 6.2 E2E テスト (UI フロー)
 

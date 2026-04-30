@@ -256,14 +256,15 @@ const steps: AttackStep[] = [
 
 #### 期待される結果 (AttackResult)
 
-```typescript
-const result: AttackResult = {
-  scenarioId: "saml-xsw", outcome: "succeeded",  // naive モードでは攻撃が成立
-  startedAt: /* Unix ms */, finishedAt: /* Unix ms */, steps,
-  blockedBy: "XPath 署名範囲検証 (strict モード)",
-  summaryJa: "XSW 攻撃は素朴なパーサに対して成立しました。XPath 署名範囲の厳密チェックがこれを阻止します。",
-};
-```
+E-2 契約: 1 リクエストで両モード (脆弱: naive パーサ — 署名対象 ID と処理対象 ID の照合なし、堅牢: strict — XPath 署名範囲厳密検証) を並列実行し、5 ステップ完全形 (probe → tamper → forge → exploit → verify) を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"saml_xsw_signed_id_processed_id_match_enforced"` (堅牢側 step 5: 署名対象 ID と処理対象 ID の不一致を検出) |
+| `steps[3].status` (脆弱側 exploit: naive パーサ) | `"success"` (XSW で attacker_charlie@demo.example のロール admin に成り代わり) |
+| `steps[4].status` (堅牢側 verify: strict 検証) | `"blocked"` |
 
 #### 防御策 (defenseRecommendation)
 
@@ -313,59 +314,17 @@ function strictVerifySamlAssertion(samlResponse: SamlWrappedPayload): VerifyResu
 
 ```
 POST /api/saml/attack/xsw
-```
+Content-Type: application/json
 
-**リクエスト**:
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  正規ユーザー / 偽 Subject / 偽ロール / XSW ペイロード構造は全てサーバー側のシード値から生成される。
+  zod スキーマ: samlAttackXswSchema = z.object({}))
 
-```json
-{
-  "mode": "naive",
-  "legitimateUsername": "seed_alice",
-  "fakeSubject": "attacker_charlie@demo.example",
-  "fakeRole": "admin"
-}
-```
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `mode` | `"naive" \| "strict"` | 必須 | `naive`: 素朴なパーサ (XSW 成立) / `strict`: 厳密チェック (XSW ブロック) |
-| `legitimateUsername` | `string` | 必須 | 固定シードユーザー名 (`seed_alice` のみ受け付ける) |
-| `fakeSubject` | `string` | 任意 | 挿入する偽 Subject (デフォルト: `attacker_charlie@demo.example`) |
-| `fakeRole` | `"admin" \| "user"` | 任意 | 挿入する偽ロール (デフォルト: `admin`) |
-
-**レスポンス (naive モード — 攻撃成立、抜粋)**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "saml-xsw",
-    "outcome": "succeeded",
-    "startedAt": 1745592000000,
-    "finishedAt": 1745592000250,
-    "steps": [ /* AttackStep[] — 上記 4 ステップ */ ],
-    "summary": "XSW 攻撃は素朴なパーサに対して成立しました。署名対象範囲の検証不備が原因です。"
-  },
-  "_trace": {
-    "cryptoOps": [
-      {
-        "op": "signSAMLAssertion(legitimate)",
-        "input": "AssertionID=_real_assertion_abc123, Subject=seed_alice@demo.example",
-        "output": "4a8f3c...(HMAC-SHA256)",
-        "algo": "HMAC-SHA256",
-        "detail": "正規ユーザーのアサーションに対する正当な署名"
-      },
-      {
-        "op": "naiveVerify(XSW_payload)",
-        "input": "SignedID=_real_assertion_abc123, ProcessedID=_fake_assertion_001",
-        "output": "signatureValid=true, processedSubject=attacker_charlie@demo.example",
-        "algo": "naive-scope-check",
-        "detail": "署名は正当だが、処理対象が署名対象と異なる (XSW 成立)"
-      }
-    ],
-    "isAttackMode": true
-  }
-}
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形 (probe → tamper → forge → exploit → verify)
+  // data.blockedBy: "saml_xsw_signed_id_processed_id_match_enforced" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (signedAssertionId / processedAssertionId / vulnerableProcessedSubject / fakeRole 等)
 ```
 
 #### _trace 内訳
@@ -513,14 +472,15 @@ const steps: AttackStep[] = [
 
 #### 期待される結果 (AttackResult)
 
-```typescript
-const result: AttackResult = {
-  scenarioId: "saml-assertion-replay", outcome: "succeeded",
-  startedAt: /* Unix ms */, finishedAt: /* Unix ms */, steps,
-  blockedBy: "OneTimeUse キャッシュ + NotOnOrAfter 検証",
-  summaryJa: "OneTimeUse チェックがなければリプレイが成立しました。NotOnOrAfter と OneTimeUse キャッシュがこれを阻止します。",
-};
-```
+E-2 契約: 1 リクエストで両モード (脆弱: OneTimeUse キャッシュなし、堅牢: OneTimeUse + NotOnOrAfter 検証) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"saml_assertion_replay_one_time_use_cache_enforced"` (堅牢側 step 5: OneTimeUse + NotOnOrAfter で再使用拒否) |
+| `steps[3].status` (脆弱側 exploit: キャッシュなし) | `"success"` (傍受アサーションのリプレイで session_attacker_001 が生成) |
+| `steps[4].status` (堅牢側 verify: OneTimeUse キャッシュ + NotOnOrAfter) | `"blocked"` |
 
 #### 防御策 (defenseRecommendation)
 
@@ -574,55 +534,17 @@ CREATE TABLE IF NOT EXISTS saml_used_assertions (
 
 ```
 POST /api/saml/attack/assertion-replay
-```
+Content-Type: application/json
 
-**リクエスト**:
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  傍受アサーション・OneTimeUse キャッシュ・NotOnOrAfter 値は全てサーバー側のシード値から生成される。
+  zod スキーマ: samlAttackAssertionReplaySchema = z.object({}))
 
-```json
-{
-  "username": "seed_alice",
-  "mode": "no-one-time-use-check",
-  "replayMode": "valid"
-}
-```
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `username` | `string` | 必須 | 固定シードユーザー名 (`seed_alice` のみ) |
-| `mode` | `"no-one-time-use-check" \| "with-one-time-use-check"` | 必須 | SP のリプレイキャッシュ有無 |
-| `replayMode` | `"valid" \| "expired"` | 任意 | `expired`: 有効期限切れアサーションでリプレイを試みる (デフォルト: `valid`) |
-
-**レスポンス (攻撃成立 — OneTimeUse チェックなし、抜粋)**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "saml-assertion-replay",
-    "outcome": "succeeded",
-    "steps": [ /* AttackStep[] — 上記 4 ステップ */ ],
-    "summary": "リプレイが成立しました。使用済みアサーション ID のキャッシュが存在しないためです。"
-  },
-  "_trace": {
-    "cryptoOps": [
-      {
-        "op": "verifyHmac(replayed_assertion)",
-        "input": "assertionId=_captured_assertion_xyz789",
-        "output": "VALID (no replay cache — reuse allowed)",
-        "algo": "HMAC-SHA256",
-        "detail": "署名は正当だが OneTimeUse キャッシュがないため再送を許可"
-      }
-    ],
-    "sessionOps": [
-      {
-        "op": "createSession (replay)",
-        "sessionId": "session_attacker_001",
-        "detail": "リプレイアサーションから不正なセッションが生成された"
-      }
-    ],
-    "isAttackMode": true
-  }
-}
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形
+  // data.blockedBy: "saml_assertion_replay_one_time_use_cache_enforced" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (capturedAssertionId / firstUsedAt / vulnerableSessionId / replayBlockedBy 等)
 ```
 
 #### _trace 内訳
@@ -777,14 +699,15 @@ const steps: AttackStep[] = [
 
 #### 期待される結果 (AttackResult)
 
-```typescript
-const result: AttackResult = {
-  scenarioId: "oidc-id-token-spoofing", outcome: "succeeded",
-  startedAt: /* Unix ms */, finishedAt: /* Unix ms */, steps,
-  blockedBy: "iss / aud / nonce 検証",
-  summaryJa: "iss/aud/nonce 検証がなければ偽 ID Token が受理されました。3 つの検証それぞれがこの攻撃を阻止します。",
-};
-```
+E-2 契約: 1 リクエストで両モード (脆弱: iss/aud/nonce 検証なし RP、堅牢: OpenID Connect Core §3.1.3.7 準拠の strict RP) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"oidc_id_token_iss_aud_nonce_validation_enforced"` (堅牢側 step 5: iss / aud / nonce のいずれかの検証で攻撃者 IdP 発行トークンを拒否) |
+| `steps[3].status` (脆弱側 exploit: 検証なし RP) | `"success"` (攻撃者 IdP 発行 ID Token で seed_alice / role: admin になりすまし) |
+| `steps[4].status` (堅牢側 verify: iss/aud/nonce 検証 RP) | `"blocked"` |
 
 #### 防御策 (defenseRecommendation)
 
@@ -833,59 +756,17 @@ function strictVerifyIdToken(
 
 ```
 POST /api/oidc/attack/id-token-spoof
-```
+Content-Type: application/json
 
-**リクエスト**:
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  攻撃者 IdP / 偽 sub / 偽 name / iss/aud/nonce クレームは全てサーバー側のシード値から生成される。
+  zod スキーマ: oidcAttackIdTokenSpoofSchema = z.object({}))
 
-```json
-{
-  "action": "issue-from-attacker-idp",
-  "targetSub": "1",
-  "targetName": "seed_alice",
-  "mode": "no-claims-check"
-}
-```
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `action` | `"issue-from-attacker-idp" \| "submit-to-vulnerable-rp" \| "submit-to-strict-rp"` | 必須 | 攻撃フローのステップ |
-| `targetSub` | `string` | 任意 | なりすます対象の sub クレーム (デフォルト: `"1"` = seed_alice) |
-| `targetName` | `string` | 任意 | なりすます対象の name クレーム (デフォルト: `"seed_alice"`) |
-| `mode` | `"no-claims-check" \| "iss-check" \| "aud-nonce-check"` | 任意 | RP の検証レベル (デフォルト: `no-claims-check`) |
-
-**レスポンス (攻撃成立 — 検証なし RP、抜粋)**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "oidc-id-token-spoofing",
-    "outcome": "succeeded",
-    "startedAt": 1745592000000,
-    "finishedAt": 1745592000300,
-    "steps": [ /* AttackStep[] — 上記 4 ステップ */ ],
-    "summary": "iss/aud/nonce 検証がなければ偽 ID Token が受理されました。"
-  },
-  "_trace": {
-    "cryptoOps": [
-      {
-        "op": "jwt.sign(attacker_idp)",
-        "input": "iss=https://attacker.example/oidc, sub=1, aud=victim-rp-client",
-        "output": "eyJhbGci...(攻撃者署名済み ID Token)",
-        "algo": "HS256",
-        "detail": "攻撃者自身の IdP が seed_alice の身元を偽って署名した ID Token"
-      },
-      {
-        "op": "jwt.decode(no-verify)",
-        "input": "eyJhbGci...",
-        "output": "sub=1, name=seed_alice, role=admin (iss/aud 未検証)",
-        "algo": "decode-only",
-        "detail": "署名検証なし・iss/aud/nonce チェックなし — 攻撃が成立"
-      }
-    ],
-    "isAttackMode": true
-  }
-}
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形
+  // data.blockedBy: "oidc_id_token_iss_aud_nonce_validation_enforced" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (attackerIssuer / forgedSub / vulnerableRpAuthAs / strictRpRejectionReason 等)
 ```
 
 #### _trace 内訳
@@ -980,18 +861,20 @@ interface AttackScenarioProps {
 
 対象ファイル: `server/routes/attack-oidc-saml.ts`
 
-| テスト ID | 検証内容 | 期待結果 |
-|---------|---------|---------|
-| `oidcsaml-atk-01` | `POST /api/saml/attack/xsw` に `mode: "naive"` を送信 | `outcome: "succeeded"`, step-3 の `processedRole: "admin"` |
-| `oidcsaml-atk-02` | `POST /api/saml/attack/xsw` に `mode: "strict"` を送信 | `outcome: "blocked"`, `blockedBy` に "XPath署名範囲検証" を含む |
-| `oidcsaml-atk-03` | `POST /api/saml/attack/assertion-replay` に `mode: "no-one-time-use-check"` を送信 | `outcome: "succeeded"`, `SessionOp` にセッション生成が記録される |
-| `oidcsaml-atk-04` | `POST /api/saml/attack/assertion-replay` に `mode: "with-one-time-use-check"` を送信 | `outcome: "blocked"`, `blockedBy` に "OneTimeUse キャッシュ" を含む |
-| `oidcsaml-atk-05` | `POST /api/saml/attack/assertion-replay` に `replayMode: "expired"` を送信 | `outcome: "blocked"`, `blockedBy` に "NotOnOrAfter" を含む |
-| `oidcsaml-atk-06` | `POST /api/oidc/attack/id-token-spoof` に `mode: "no-claims-check"` を送信 | `outcome: "succeeded"`, `authenticatedAs: "seed_alice"`, `role: "admin"` |
-| `oidcsaml-atk-07` | `POST /api/oidc/attack/id-token-spoof` に `mode: "iss-check"` を送信 | `outcome: "blocked"`, `blockedBy` に "iss 検証" を含む |
-| `oidcsaml-atk-08` | `POST /api/oidc/attack/id-token-spoof` に `mode: "aud-nonce-check"` を送信 | `outcome: "blocked"`, `blockedBy` に "aud 検証" を含む |
-| `oidcsaml-atk-09` | 存在しないシードユーザー名を `legitimateUsername` に送信 | `400 Bad Request`, バリデーションエラー |
-| `oidcsaml-atk-10` | 本番環境 (`NODE_ENV=production`) でいずれかの攻撃エンドポイントに送信 | `403 Forbidden` |
+E-2 契約に準拠したテスト構成。各シナリオは 1 リクエストで両モード並列実行のため、`outcome === "succeeded"` 固定 + 5 ステップ完全形 + `blockedBy` で防御識別子を検証する。実装は `server/__tests__/oidc-saml-attack.test.ts`。
+
+| テストカテゴリ | 対象 | 期待値 |
+|------------|-----|--------|
+| E-2 不変条件 (it.each で 3 シナリオ共通) | `saml-xsw` / `saml-assertion-replay` / `oidc-id-token-spoof` | `status === 200` / `outcome === "succeeded"` / `steps.length === 5` / `_trace.attackSteps.length === 5` / `_trace.isAttackMode === true` |
+| logId 一意性 | 全 3 シナリオを連続実行 | `attack_log` テーブルに 3 件の独立 logId を確認 |
+| 本番ガード | `NODE_ENV=production` で全 3 ルート | `status === 403` |
+| summaryJa prefix | 全 3 シナリオ | 「この実装は」または「このシナリオでは」で始まる |
+| シナリオ A: blockedBy | `saml-xsw` | `"saml_xsw_signed_id_processed_id_match_enforced"` |
+| シナリオ A: extra フィールド | `saml-xsw` | `extra.signedAssertionId` / `extra.processedAssertionId` (脆弱側で異なる ID) / `extra.vulnerableProcessedSubject` を含む |
+| シナリオ B: blockedBy | `saml-assertion-replay` | `"saml_assertion_replay_one_time_use_cache_enforced"` |
+| シナリオ B: extra フィールド | `saml-assertion-replay` | `extra.capturedAssertionId` / `extra.firstUsedAt` / `extra.vulnerableSessionId` を含む |
+| シナリオ C: blockedBy | `oidc-id-token-spoof` | `"oidc_id_token_iss_aud_nonce_validation_enforced"` |
+| シナリオ C: extra フィールド | `oidc-id-token-spoof` | `extra.attackerIssuer` (`"https://attacker.example/oidc"`) / `extra.forgedSub` / `extra.vulnerableRpAuthAs === "seed_alice"` / `extra.strictRpRejectionReason` を含む |
 
 ### 6.2 E2E テスト (UI フロー)
 

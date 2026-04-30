@@ -315,6 +315,35 @@ rbacRoutes.get("/attack/idor", async (c) => {
 });
 ```
 
+#### 期待結果
+
+E-2 契約: 1 リクエストで両モード (脆弱: owner_id チェックなし、堅牢: owner_id 検証あり) を並列実行し、5 ステップ完全形 (probe → tamper → forge → exploit → verify) を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"rbac_owner_id_check_enforced"` (堅牢側 step 5: owner_id 不一致でアクセス拒否) |
+| `steps[3].status` (脆弱側 exploit: owner_id チェックなし) | `"success"` (別ユーザーの profile が漏洩) |
+| `steps[4].status` (堅牢側 verify: owner_id 検証あり) | `"blocked"` |
+
+#### API 契約
+
+```
+POST /api/rbac/attack/idor
+Content-Type: application/json
+
+Request: { "victimId"?: number } (E-2: optional フィールドのみ。
+  攻撃者・被害者・seed リソースは全てサーバー側のシード値から生成される。
+  zod スキーマ: rbacAttackIdorSchema = z.object({ victimId: z.number().int().min(1).max(100).optional() }))
+
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形
+  // data.blockedBy: "rbac_owner_id_check_enforced" (堅牢側で発火)
+  // data.extra: シナリオ固有フィールド (vulnerableProfile / defendedAccessDenied / attackerUserId / victimUserId 等)
+```
+
 #### 防御策
 
 | 防御策 | 実装方法 |
@@ -560,6 +589,39 @@ rbacRoutes.post("/attack/horizontal-escalation", async (c) => {
     data: { resource: SEED_ALICE_ARTICLE, attackResult: result },
   });
 });
+```
+
+#### 期待結果
+
+E-2 契約: 1 リクエストで両モード (脆弱: owner_id チェックなし、堅牢: resource owner 検証あり) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"rbac_resource_owner_check_enforced"` (堅牢側 step 5: 同一ロールでも owner_id 不一致でリソースアクセス拒否) |
+| `steps[3].status` (脆弱側 exploit: ロール確認のみ) | `"success"` (同一ロールの被害者リソースが返却) |
+| `steps[4].status` (堅牢側 verify: resource owner 検証) | `"blocked"` |
+
+#### API 契約
+
+```
+POST /api/rbac/attack/horizontal-escalation
+Content-Type: application/json
+
+Request: { "attackerRole"?: string, "targetUserId"?: number, "action"?: string }
+  (E-2: optional フィールドのみ。固定シードユーザー/ロール/リソースから両モード並列実行。
+   zod スキーマ: rbacAttackHorizontalEscalationSchema = z.object({
+     attackerRole: z.enum(["admin","editor","viewer"]).optional(),
+     targetUserId: z.number().int().min(1).max(100).optional(),
+     action: z.enum(["read","write","delete"]).optional(),
+   }))
+
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形
+  // data.blockedBy: "rbac_resource_owner_check_enforced" (堅牢側で発火)
+  // data.extra: シナリオ固有フィールド (attackerUserId / victimUserId / rolesAreEqual / vulnerableArticle 等)
 ```
 
 #### 防御策
@@ -815,6 +877,38 @@ rbacRoutes.post("/attack/vertical-escalation", async (c) => {
     },
   });
 });
+```
+
+#### 期待結果
+
+E-2 契約: 1 リクエストで両モード (脆弱: ミドルウェアなし、堅牢: requireRole 検証ミドルウェア) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"rbac_role_check_middleware_enforced"` (堅牢側 step 5: requireRole ミドルウェアが viewer の admin 操作を拒否) |
+| `steps[3].status` (脆弱側 exploit: ミドルウェアなし) | `"success"` (viewer ロールが admin 操作を実行) |
+| `steps[4].status` (堅牢側 verify: requireRole 検証) | `"blocked"` |
+
+#### API 契約
+
+```
+POST /api/rbac/attack/vertical-escalation
+Content-Type: application/json
+
+Request: { "attackerRole"?: string, "targetUserId"?: number } (E-2: optional フィールドのみ。
+  シードユーザー / 削除操作対象 / ミドルウェア on/off の両モードはハンドラで並列実行。
+  zod スキーマ: rbacAttackVerticalEscalationSchema = z.object({
+    attackerRole: z.enum(["admin","editor","viewer"]).optional(),
+    targetUserId: z.number().int().min(1).max(100).optional(),
+  }))
+
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形
+  // data.blockedBy: "rbac_role_check_middleware_enforced" (堅牢側で発火)
+  // data.extra: シナリオ固有フィールド (vulnerableDeleteSimulated / defendedRejectionStatus / attackerRole 等)
 ```
 
 #### 防御策
@@ -1084,6 +1178,38 @@ rbacRoutes.post("/attack/abac-tamper", async (c) => {
 });
 ```
 
+#### 期待結果
+
+E-2 契約: 1 リクエストで両モード (脆弱: クライアント送信属性を信頼、堅牢: サーバー側 DB 属性で照合) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"abac_server_side_attribute_lookup_enforced"` (堅牢側 step 5: サーバー側 DB から取得した属性で ABAC 評価を実施し改竄値を無効化) |
+| `steps[3].status` (脆弱側 exploit: クライアント送信 department を信頼) | `"success"` (改竄属性で department-match ポリシー突破) |
+| `steps[4].status` (堅牢側 verify: サーバー側 DB 属性) | `"blocked"` |
+
+#### API 契約
+
+```
+POST /api/rbac/attack/abac-tamper
+Content-Type: application/json
+
+Request: { "tamperedDepartment"?: string, "resourceDepartment"?: string }
+  (E-2: optional フィールドのみ。被害シナリオの subject/真正属性はサーバー側のシード値から生成される。
+   zod スキーマ: rbacAttackAbacTamperSchema = z.object({
+     tamperedDepartment: z.string().max(64).optional(),
+     resourceDepartment: z.string().max(64).optional(),
+   }))
+
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形
+  // data.blockedBy: "abac_server_side_attribute_lookup_enforced" (堅牢側で発火)
+  // data.extra: シナリオ固有フィールド (clientProvidedDepartment / serverSideDepartment / vulnerableResult / defendedResult 等)
+```
+
 #### 防御策
 
 | 防御策 | 実装方法 |
@@ -1281,20 +1407,22 @@ import { Show } from "solid-js";
 
 ### 6.1 バックエンド API テスト
 
-`server/routes/rbac.test.ts` に以下のテストケースを追加する:
+E-2 契約に準拠したテスト構成。各シナリオは 1 リクエストで両モード並列実行のため、`outcome === "succeeded"` 固定 + 5 ステップ完全形 + `blockedBy` で防御識別子を検証する。実装は `server/__tests__/rbac-attack.test.ts` (Phase 2 第二コミット)。
 
-| # | エンドポイント | テスト内容 | 期待結果 |
-|---|----------------|-----------|---------|
-| 1 | `GET /api/rbac/attack/idor?victimId=1` | シードユーザー以外の victimId で取得 | `outcome: "succeeded"`, プロファイルデータ返却 |
-| 2 | `GET /api/rbac/attack/idor?victimId=999` | 存在しない victimId | 404 |
-| 3 | `POST /api/rbac/attack/horizontal-escalation` body: `{attackerRole:"editor",targetUserId:1}` | editor が alice のリソースを取得 | `outcome: "succeeded"` |
-| 4 | `POST /api/rbac/attack/horizontal-escalation` body: `{attackerRole:"unknown",targetUserId:1}` | 存在しないロール | `outcome: "blocked"` |
-| 5 | `POST /api/rbac/attack/vertical-escalation` body: `{useMiddleware:false,attackerRole:"viewer"}` | ミドルウェアなし | `outcome: "succeeded"` |
-| 6 | `POST /api/rbac/attack/vertical-escalation` body: `{useMiddleware:true,attackerRole:"viewer"}` | ミドルウェアあり | 403, `outcome: "blocked"` |
-| 7 | `POST /api/rbac/attack/vertical-escalation` body: `{useMiddleware:true,attackerRole:"admin"}` | admin ロールでミドルウェアあり | 200, `outcome: "blocked"` (= 正規アクセス) |
-| 8 | `POST /api/rbac/attack/abac-tamper` body: `{department:"Finance",resourceDepartment:"Finance"}` | 改竄あり | `isTampered:true`, `vulnerableResult:"ALLOW"`, `defendedResult:"DENY"` |
-| 9 | `POST /api/rbac/attack/abac-tamper` body: `{department:"Engineering",resourceDepartment:"Finance"}` | 改竄なし (正常) | `isTampered:false`, `vulnerableResult:"DENY"`, `defendedResult:"DENY"` |
-| 10 | `POST /api/rbac/attack/abac-tamper` body: `{subject:"seed_bob",department:"Finance",resourceDepartment:"Finance"}` | seed_bob (Marketing) の改竄 | `isTampered:true`, `serverSideDepartment:"Marketing"` |
+| テストカテゴリ | 対象 | 期待値 |
+|------------|-----|--------|
+| E-2 不変条件 (it.each で 4 シナリオ共通) | `idor` / `horizontal-escalation` / `vertical-escalation` / `abac-tamper` | `status === 200` / `outcome === "succeeded"` / `steps.length === 5` / `_trace.attackSteps.length === 5` / `_trace.isAttackMode === true` |
+| logId 一意性 | 全 4 シナリオを連続実行 | `attack_log` テーブルに 4 件の独立 logId を確認 |
+| 本番ガード | `NODE_ENV=production` で全 4 ルート | `status === 403` |
+| summaryJa prefix | 全 4 シナリオ | 「この実装は」または「このシナリオでは」で始まる |
+| シナリオ A: blockedBy | `idor` | `"rbac_owner_id_check_enforced"` |
+| シナリオ A: extra フィールド | `idor` | `extra.vulnerableProfile` (脆弱側で漏洩した別ユーザー profile) と `extra.defendedAccessDenied` (堅牢側で 403 相当の判定) を含む |
+| シナリオ B: blockedBy | `horizontal-escalation` | `"rbac_resource_owner_check_enforced"` |
+| シナリオ B: extra フィールド | `horizontal-escalation` | `extra.attackerUserId` / `extra.victimUserId` / `extra.rolesAreEqual === true` を含む |
+| シナリオ C: blockedBy | `vertical-escalation` | `"rbac_role_check_middleware_enforced"` |
+| シナリオ C: extra フィールド | `vertical-escalation` | `extra.vulnerableDeleteSimulated` (脆弱側で実行された admin 操作) と `extra.defendedRejectionStatus === 403` を含む |
+| シナリオ D: blockedBy | `abac-tamper` | `"abac_server_side_attribute_lookup_enforced"` |
+| シナリオ D: extra フィールド | `abac-tamper` | `extra.clientProvidedDepartment` / `extra.serverSideDepartment` / `extra.vulnerableResult === "ALLOW"` / `extra.defendedResult === "DENY"` を含む |
 
 ### 6.2 `_trace` 検証
 

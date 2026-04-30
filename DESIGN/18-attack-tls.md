@@ -229,23 +229,15 @@ const steps: AttackStep[] = [
 
 #### 期待される結果 (AttackResult)
 
-```typescript
-const result: AttackResult = {
-  scenarioId: "tls-version-downgrade",
-  outcome: "succeeded",   // SCSV なし実装では攻撃が成立
-  startedAt: /* Unix ms */,
-  finishedAt: /* Unix ms */,
-  steps,
-  blockedBy: "TLS_FALLBACK_SCSV による inappropriate_fallback アラート",
-  summary: "Without TLS_FALLBACK_SCSV, MITM forced TLS 1.0 with RC4. With SCSV, the server detected the downgrade and aborted.",
-  summaryJa: "TLS_FALLBACK_SCSV がない場合、MITM が TLS 1.0+RC4 に強制ダウングレードしました。SCSV があれば、サーバーがダウングレードを検知し接続を中断しました。",
-};
-```
+E-2 契約: 1 リクエストで両モード (脆弱: TLS_FALLBACK_SCSV 検証なし、堅牢: SCSV 検証 → inappropriate_fallback アラート) を並列実行し、5 ステップ完全形 (probe → tamper → forge → exploit → verify) を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
 
-UI 上の表示:
-- step-1〜3: 攻撃成立 (SCSV なし時) → オレンジ
-- step-4: 防御成立 (SCSV あり時) → 緑
-- 結果バナー: 「この実装は脆弱です: TLS_FALLBACK_SCSV がないため、MITM によるバージョンダウングレードが成立しました」
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"tls_fallback_scsv_inappropriate_fallback_alert_enforced"` (堅牢側 step 5: SCSV を検出し inappropriate_fallback アラートで中断) |
+| `steps[3].status` (脆弱側 exploit: SCSV 検証なし) | `"success"` (TLS 1.0 + RC4 に強制ダウングレードが成立) |
+| `steps[4].status` (堅牢側 verify: SCSV 検証あり) | `"blocked"` |
 
 #### 防御策 (defenseRecommendation)
 
@@ -295,104 +287,17 @@ function checkFallbackSCSV(offeredCiphers: string[], negotiatedVersion: string, 
 
 ```
 POST /api/tls/attack/version-downgrade
-```
+Content-Type: application/json
 
-**リクエスト**:
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  ClientHello 改竄 / SCSV 検証 on/off / 弱暗号スイート選択は全てサーバー側のシード値から生成される。
+  zod スキーマ: tlsAttackVersionDowngradeSchema = z.object({}))
 
-```json
-{
-  "mitmEnabled": true,
-  "fallbackScsvEnabled": false
-}
-```
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `mitmEnabled` | `boolean` | 必須 | `true` の場合、ClientHello のダウングレード改竄をシミュレート |
-| `fallbackScsvEnabled` | `boolean` | 任意 | `true` の場合、サーバー側で TLS_FALLBACK_SCSV を確認してダウングレードを拒否する (デフォルト `false`) |
-
-**レスポンス (MITM 有効、SCSV なし — 攻撃成立)**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "tls-version-downgrade",
-    "outcome": "succeeded",
-    "startedAt": 1745592000000,
-    "finishedAt": 1745592000120,
-    "steps": [
-      {
-        "id": "step-1",
-        "kind": "intercept",
-        "label": "Intercept ClientHello (client offers TLS 1.0–1.3)",
-        "labelJa": "ClientHello を傍受 — クライアントは TLS 1.0-1.3 を提示",
-        "status": "success",
-        "payload": { "type": "tls", "version": "TLS 1.3", "cipherSuite": "TLS_AES_256_GCM_SHA384" },
-        "timestamp": 1745592000020
-      },
-      {
-        "id": "step-2",
-        "kind": "tamper",
-        "label": "MITM removes TLS 1.2/1.3 from supported_versions",
-        "labelJa": "MITM が supported_versions から TLS 1.2/1.3 を削除",
-        "status": "success",
-        "payload": { "type": "tls", "version": "TLS 1.3", "downgradedTo": "TLS 1.0", "weakCipherSuite": "TLS_RSA_WITH_RC4_128_MD5" },
-        "timestamp": 1745592000050
-      },
-      {
-        "id": "step-3",
-        "kind": "probe",
-        "label": "Server accepts TLS 1.0 (no SCSV check)",
-        "labelJa": "サーバーが TLS 1.0 を受け入れる (SCSV チェックなし)",
-        "status": "success",
-        "payload": { "type": "tls", "downgradedTo": "TLS 1.0", "weakCipherSuite": "TLS_RSA_WITH_RC4_128_MD5" },
-        "timestamp": 1745592000090
-      }
-    ],
-    "summary": "MITM forced TLS 1.0 with RC4. No downgrade protection was in place.",
-    "summaryJa": "MITM が TLS 1.0+RC4 に強制ダウングレードしました。ダウングレード保護が存在しませんでした。"
-  },
-  "_trace": {
-    "cryptoOps": [
-      {
-        "op": "tls.negotiateVersion (vulnerable)",
-        "input": "offered=[TLS 1.0] (downgraded by MITM)",
-        "output": "TLS 1.0 accepted",
-        "algo": "TLS version negotiation",
-        "detail": "No TLS_FALLBACK_SCSV check. Server accepted the MITM-downgraded version."
-      }
-    ],
-    "attackSteps": [ /* AttackStep[] */ ]
-  }
-}
-```
-
-**レスポンス (SCSV 有効 — ブロック)**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "tls-version-downgrade",
-    "outcome": "blocked",
-    "blockedBy": "TLS_FALLBACK_SCSV",
-    "steps": [
-      {
-        "id": "step-4",
-        "kind": "blocked",
-        "label": "Server with TLS_FALLBACK_SCSV detects downgrade and aborts",
-        "labelJa": "TLS_FALLBACK_SCSV を実装したサーバーがダウングレードを検知し接続を中断",
-        "status": "blocked",
-        "payload": { "type": "tls", "version": "TLS 1.0", "cipherSuite": "TLS_FALLBACK_SCSV" },
-        "timestamp": 1745592000100
-      }
-    ],
-    "summary": "TLS_FALLBACK_SCSV detected the forced downgrade. Server sent inappropriate_fallback alert.",
-    "summaryJa": "TLS_FALLBACK_SCSV が強制ダウングレードを検知し、サーバーが inappropriate_fallback アラートを送信しました。"
-  },
-  "_trace": { /* ... */ }
-}
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形 (probe → tamper → forge → exploit → verify)
+  // data.blockedBy: "tls_fallback_scsv_inappropriate_fallback_alert_enforced" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (downgradedToVersion / weakCipherSuite / scsvDetected / inappropriateFallbackAlert 等)
 ```
 
 #### _trace 内訳
@@ -579,18 +484,15 @@ const steps: AttackStep[] = [
 
 #### 期待される結果 (AttackResult)
 
-```typescript
-const result: AttackResult = {
-  scenarioId: "tls-self-signed-mitm",
-  outcome: "succeeded",  // 証明書検証無効時は攻撃が成立
-  startedAt: /* Unix ms */,
-  finishedAt: /* Unix ms */,
-  steps,
-  blockedBy: "クライアント CA チェーン検証 (rejectUnauthorized: true)",
-  summary: "With certificate validation disabled, the self-signed MITM cert was accepted. With validation enabled, the connection was aborted.",
-  summaryJa: "証明書検証が無効の場合、自己署名 MITM 証明書が受け入れられました。検証が有効の場合は接続が中断されました。",
-};
-```
+E-2 契約: 1 リクエストで両モード (脆弱: rejectUnauthorized=false (検証無効)、堅牢: CA チェーン検証 + certificate_unknown アラート) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"tls_ca_chain_validation_certificate_unknown_alert_enforced"` (堅牢側 step 5: CA 信頼ストアに無い発行者を検出し certificate_unknown アラートで中断) |
+| `steps[3].status` (脆弱側 exploit: 検証無効) | `"success"` (自己署名 MITM 証明書が受理され、クライアント-MITM 間の TLS が確立) |
+| `steps[4].status` (堅牢側 verify: CA チェーン検証) | `"blocked"` |
 
 #### 防御策 (defenseRecommendation)
 
@@ -632,82 +534,17 @@ function verifyCertPin(cert: tls.PeerCertificate, expectedPin: string): boolean 
 
 ```
 POST /api/tls/attack/self-signed-mitm
-```
+Content-Type: application/json
 
-**リクエスト**:
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  自己署名証明書生成 / CA チェーン検証 on/off / 信頼ストア構成は全てサーバー側のシード値から生成される。
+  zod スキーマ: tlsAttackSelfSignedMitmSchema = z.object({}))
 
-```json
-{
-  "certValidationEnabled": false
-}
-```
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `certValidationEnabled` | `boolean` | 必須 | `false` の場合、クライアントが証明書検証を無効化した状態をシミュレート |
-
-**レスポンス (検証無効 — 攻撃成立)**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "tls-self-signed-mitm",
-    "outcome": "succeeded",
-    "startedAt": 1745592000000,
-    "finishedAt": 1745592000200,
-    "steps": [ /* step-1〜3 */ ],
-    "summary": "Certificate validation was disabled. Self-signed MITM cert accepted.",
-    "summaryJa": "証明書検証が無効でした。自己署名 MITM 証明書が受け入れられました。"
-  },
-  "_trace": {
-    "cryptoOps": [
-      {
-        "op": "generateSelfSignedCert (attacker)",
-        "input": "subject=CN=localhost, O=Attacker Corp",
-        "output": "selfSigned=true, issuer=self",
-        "algo": "RSA-2048 (self-signed)",
-        "detail": "Attacker generates a self-signed certificate impersonating the legitimate server."
-      },
-      {
-        "op": "certChainValidation (disabled)",
-        "input": "rejectUnauthorized=false",
-        "output": "SKIPPED — any certificate accepted",
-        "algo": "X.509 chain validation",
-        "detail": "Certificate validation was disabled. Self-signed cert accepted without CA verification."
-      }
-    ],
-    "attackSteps": [ /* AttackStep[] */ ]
-  }
-}
-```
-
-**レスポンス (検証有効 — ブロック)**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "tls-self-signed-mitm",
-    "outcome": "blocked",
-    "blockedBy": "ca_chain_validation",
-    "steps": [ /* step-1〜2 + step-4 */ ],
-    "summary": "CA chain validation rejected the self-signed certificate.",
-    "summaryJa": "CA チェーン検証が自己署名証明書を拒否しました。"
-  },
-  "_trace": {
-    "cryptoOps": [
-      {
-        "op": "certChainValidation",
-        "input": "cert=CN=localhost O=Attacker Corp (self-signed)",
-        "output": "FAILED: issuer not in trusted root store",
-        "algo": "X.509 chain validation",
-        "detail": "The certificate issuer was not found in the trusted CA store. Connection aborted."
-      }
-    ],
-    "attackSteps": [ /* AttackStep[] */ ]
-  }
-}
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形
+  // data.blockedBy: "tls_ca_chain_validation_certificate_unknown_alert_enforced" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (selfSignedSubject / selfSignedIssuer / certUnknownAlert / mitmEstablished 等)
 ```
 
 #### _trace 内訳
@@ -896,18 +733,15 @@ const steps: AttackStep[] = [
 
 #### 期待される結果 (AttackResult)
 
-```typescript
-const result: AttackResult = {
-  scenarioId: "tls-weak-cipher-negotiation",
-  outcome: "succeeded",  // 弱い暗号スイートを許可するサーバーでは攻撃が成立
-  startedAt: /* Unix ms */,
-  finishedAt: /* Unix ms */,
-  steps,
-  blockedBy: "暗号スイート許可リスト (AEAD のみ許可)",
-  summary: "Server supporting RC4 negotiated a weak cipher when forced by MITM. Strict allowlist blocked the attack.",
-  summaryJa: "RC4 をサポートするサーバーは MITM に強制されて弱い暗号でネゴシエーションしました。厳格な許可リストで攻撃は阻止されました。",
-};
-```
+E-2 契約: 1 リクエストで両モード (脆弱: RC4-MD5 を許可するサーバー、堅牢: TLS 1.3 AEAD のみ許可) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"tls_cipher_allowlist_handshake_failure_alert_enforced"` (堅牢側 step 5: 共通暗号スイートなしで handshake_failure アラートを返す) |
+| `steps[3].status` (脆弱側 exploit: RC4 許可サーバー) | `"success"` (RC4-MD5 でネゴシエーション成立) |
+| `steps[4].status` (堅牢側 verify: AEAD allowlist) | `"blocked"` |
 
 #### 防御策 (defenseRecommendation)
 
@@ -959,77 +793,17 @@ const compatServer = tls.createServer({
 
 ```
 POST /api/tls/attack/weak-cipher
-```
+Content-Type: application/json
 
-**リクエスト**:
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  ClientHello 改竄 / 暗号スイート許可リスト / RC4-MD5 ネゴシエーションは全てサーバー側のシード値から生成される。
+  zod スキーマ: tlsAttackWeakCipherSchema = z.object({}))
 
-```json
-{
-  "mitmEnabled": true,
-  "serverAllowWeakCiphers": true
-}
-```
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `mitmEnabled` | `boolean` | 必須 | `true` の場合、ClientHello から強い暗号スイートを削除する改竄をシミュレート |
-| `serverAllowWeakCiphers` | `boolean` | 必須 | `true` の場合、脆弱なサーバー (RC4/3DES を許可) としてシミュレート。`false` の場合、強い暗号のみ許可するサーバー |
-
-**レスポンス (弱い暗号許可サーバー — 攻撃成立)**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "tls-weak-cipher-negotiation",
-    "outcome": "succeeded",
-    "startedAt": 1745592000000,
-    "finishedAt": 1745592000150,
-    "steps": [ /* step-1〜3 */ ],
-    "summary": "Server supporting RC4 negotiated a weak cipher when MITM stripped strong ciphers.",
-    "summaryJa": "RC4 をサポートするサーバーは MITM が強い暗号を削除した後、弱い暗号でネゴシエーションしました。"
-  },
-  "_trace": {
-    "cryptoOps": [
-      {
-        "op": "cipherSuiteNegotiation (vulnerable server)",
-        "input": "client offered: [RC4-MD5] (MITM stripped strong ciphers)",
-        "output": "negotiated: TLS_RSA_WITH_RC4_128_MD5",
-        "algo": "RC4-MD5 (BROKEN)",
-        "detail": "Server accepted RC4 for backward compatibility. RC4 has known statistical biases enabling plaintext recovery."
-      }
-    ],
-    "attackSteps": [ /* AttackStep[] */ ]
-  }
-}
-```
-
-**レスポンス (強い暗号のみ許可サーバー — ブロック)**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "tls-weak-cipher-negotiation",
-    "outcome": "blocked",
-    "blockedBy": "cipher_allowlist",
-    "steps": [ /* step-1〜2 + step-4 */ ],
-    "summary": "Strict cipher allowlist found no common cipher suite. Handshake failed.",
-    "summaryJa": "厳格な暗号許可リストにより共通の暗号スイートが見つからず、ハンドシェイクが失敗しました。"
-  },
-  "_trace": {
-    "cryptoOps": [
-      {
-        "op": "cipherSuiteNegotiation (strict server)",
-        "input": "client offered: [RC4-MD5], server accepts: [AES_256_GCM_SHA384, CHACHA20_POLY1305_SHA256]",
-        "output": "FAILED: no common cipher suite (handshake_failure)",
-        "algo": "cipher allowlist enforcement",
-        "detail": "Server's strict allowlist does not include RC4. Handshake aborted with handshake_failure alert."
-      }
-    ],
-    "attackSteps": [ /* AttackStep[] */ ]
-  }
-}
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形
+  // data.blockedBy: "tls_cipher_allowlist_handshake_failure_alert_enforced" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (negotiatedWeakCipher / strictServerAllowlist / handshakeFailureAlert / mitmStrippedCiphers 等)
 ```
 
 #### _trace 内訳
@@ -1155,19 +929,20 @@ interface WeakCipherScenarioProps {
 
 ### 6.1 ユニットテスト (バックエンドハンドラ単体)
 
-対象ファイル: `server/routes/tls-sim.ts` への攻撃サブパス追加分
+E-2 契約に準拠したテスト構成。各シナリオは 1 リクエストで両モード並列実行のため、`outcome === "succeeded"` 固定 + 5 ステップ完全形 + `blockedBy` で防御識別子を検証する。実装は `server/__tests__/tls-attack.test.ts`。
 
-| テスト ID | 検証内容 | 期待結果 |
-|---------|---------|---------|
-| `tls-atk-01` | `POST /attack/version-downgrade` に `mitmEnabled: true, fallbackScsvEnabled: false` を送信 | `outcome: "succeeded"`, step-3 の `status: "success"`, `weakCipherSuite: "TLS_RSA_WITH_RC4_128_MD5"` を含む |
-| `tls-atk-02` | `POST /attack/version-downgrade` に `fallbackScsvEnabled: true` を送信 | `outcome: "blocked"`, `blockedBy: "TLS_FALLBACK_SCSV"`, step-4 の `status: "blocked"` を含む |
-| `tls-atk-03` | `POST /attack/self-signed-mitm` に `certValidationEnabled: false` を送信 | `outcome: "succeeded"`, step-3 に `mitmEstablished: true` を含む |
-| `tls-atk-04` | `POST /attack/self-signed-mitm` に `certValidationEnabled: true` を送信 | `outcome: "blocked"`, `blockedBy: "ca_chain_validation"`, step-4 の `status: "blocked"` を含む |
-| `tls-atk-05` | `POST /attack/weak-cipher` に `serverAllowWeakCiphers: true` を送信 | `outcome: "succeeded"`, `_trace.cryptoOps` に `RC4-MD5` ネゴシエーション記録を含む |
-| `tls-atk-06` | `POST /attack/weak-cipher` に `serverAllowWeakCiphers: false` を送信 | `outcome: "blocked"`, `blockedBy: "cipher_allowlist"`, `handshake_failure` を含む |
-| `tls-atk-07` | `POST /attack/version-downgrade` にボディなしで送信 | `400 Bad Request` (バリデーションエラー) |
-| `tls-atk-08` | 本番環境 (`NODE_ENV=production`) でいずれかの攻撃エンドポイントに送信 | `403 Forbidden` |
-| `tls-atk-09` | すべての攻撃レスポンスに `_trace.attackSteps` が含まれることを確認 | `_trace.attackSteps.length >= 2` |
+| テストカテゴリ | 対象 | 期待値 |
+|------------|-----|--------|
+| E-2 不変条件 (it.each で 3 シナリオ共通) | `version-downgrade` / `self-signed-mitm` / `weak-cipher` | `status === 200` / `outcome === "succeeded"` / `steps.length === 5` / `_trace.attackSteps.length === 5` / `_trace.isAttackMode === true` |
+| logId 一意性 | 全 3 シナリオを連続実行 | `attack_log` テーブルに 3 件の独立 logId を確認 |
+| 本番ガード | `NODE_ENV=production` で全 3 ルート | `status === 403` |
+| summaryJa prefix | 全 3 シナリオ | 「この実装は」または「このシナリオでは」で始まる |
+| シナリオ A: blockedBy | `version-downgrade` | `"tls_fallback_scsv_inappropriate_fallback_alert_enforced"` |
+| シナリオ A: extra フィールド | `version-downgrade` | `extra.downgradedToVersion` (`"TLS 1.0"`) / `extra.weakCipherSuite` (`"TLS_RSA_WITH_RC4_128_MD5"`) / `extra.scsvDetected === true` / `extra.inappropriateFallbackAlert` を含む |
+| シナリオ B: blockedBy | `self-signed-mitm` | `"tls_ca_chain_validation_certificate_unknown_alert_enforced"` |
+| シナリオ B: extra フィールド | `self-signed-mitm` | `extra.selfSignedSubject` / `extra.selfSignedIssuer` / `extra.mitmEstablished` (脆弱側 true / 堅牢側 false) / `extra.certUnknownAlert` を含む |
+| シナリオ C: blockedBy | `weak-cipher` | `"tls_cipher_allowlist_handshake_failure_alert_enforced"` |
+| シナリオ C: extra フィールド | `weak-cipher` | `extra.negotiatedWeakCipher` (`"TLS_RSA_WITH_RC4_128_MD5"`) / `extra.strictServerAllowlist` / `extra.handshakeFailureAlert` / `extra.mitmStrippedCiphers` を含む |
 
 ### 6.2 E2E テスト (UI フロー)
 

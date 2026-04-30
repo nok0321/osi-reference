@@ -171,16 +171,30 @@ if (newCounter > 0 && newCounter <= cred.counter) {
 
 ```
 POST /api/webauthn/attack/phishing-origin
+Content-Type: application/json
+
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  攻撃者オリジン・正規 origin・challenge は全てサーバー側のシード値から生成される。
+  zod スキーマ: webauthnAttackPhishingOriginSchema = z.object({}))
+
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に — 5 ステップ完全形で両モードを並列観察)
+  // data.steps: 5 ステップ完全形 (probe → tamper → forge → exploit → verify)
+  // data.blockedBy: "webauthn_origin_validation_enforced" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (attackerOrigin / expectedOrigin / clientDataJsonOrigin / vulnerablePathOutcome 等)
 ```
 
-**リクエストボディ:**
+##### 期待結果
 
-```typescript
-{
-  username: string;           // 攻撃対象ユーザー名 (デモ用: "seed_alice")
-  fakeOrigin: string;         // シミュレーション上の攻撃者オリジン (例: "http://attacker.example")
-}
-```
+E-2 契約: 1 リクエストで両モード (脆弱: origin 検証なしと仮定、堅牢: expectedOrigin 厳密一致) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"webauthn_origin_validation_enforced"` (堅牢側 step 5: clientDataJSON.origin と expectedOrigin の不一致で拒否) |
+| `steps[3].status` (脆弱側 exploit: origin 検証スキップ) | `"success"` (attacker.example origin の署名が受理される仮想シナリオ) |
+| `steps[4].status` (堅牢側 verify: expectedOrigin 厳密一致) | `"blocked"` |
 
 **サーバー側シミュレーション処理:**
 
@@ -320,25 +334,30 @@ await verifyAuthenticationResponse({
 
 ```
 POST /api/webauthn/attack/vs-password-phishing
+Content-Type: application/json
+
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  パスワード側 / FIDO2 側の中継型フィッシングは全てサーバー側のシード値から生成される。
+  zod スキーマ: webauthnAttackVsPasswordPhishingSchema = z.object({}))
+
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形 (probe → tamper → forge → exploit → verify)
+  // data.blockedBy: "webauthn_origin_phishing_blocked" (堅牢側 FIDO2 ステップで発火)
+  // data.extra: シナリオ固有フィールド (passwordSidePhishingSucceeded / fido2SideOriginRejected / comparisonNote 等)
 ```
 
-**リクエストボディ:**
+##### 期待結果
 
-```typescript
-{
-  username: string;  // デモ用固定: "seed_alice"
-}
-```
+E-2 契約: 1 リクエストで両モード (脆弱: パスワード認証 — origin 拘束なし、堅牢: FIDO2 — origin 暗号バインディング) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
 
-**レスポンス構造 (両パネル分を一括返却):**
-- `data.passwordSide`: `AttackResult` — `outcome: "succeeded"` (パスワード側は脆弱を示す)
-- `data.fido2Side`: `AttackResult` — `outcome: "blocked"` (FIDO2 側は防御成立)
-- `data.comparison.phishingSuccessRate`: `{ password: "100%", fido2: "0%" }`
-
-`AttackResultBanner`: パスワード側は赤色 (`outcome: "succeeded"`)、FIDO2 側は緑色 (`outcome: "blocked"`)。
-文言規約は 04-safety-guardrails.md §2.1/§2.2 に従う:
-- パスワード側 OK: 「このシナリオでは パスワード認証は中継型フィッシングに対する防御機構がないため、攻撃が成立しました」
-- FIDO2 側 OK: 「防御が機能しました: origin 検証がフィッシングページからの署名を拒否しました」
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"webauthn_origin_phishing_blocked"` (堅牢側 step 5: FIDO2 が attacker.example origin の署名を拒否) |
+| `steps[3].status` (脆弱側 exploit: パスワード中継) | `"success"` (フィッシングページが収集したパスワードで正規ログイン成立) |
+| `steps[4].status` (堅牢側 verify: FIDO2 origin 検証) | `"blocked"` |
 
 #### 4.2.4 防御解説パネルコンテンツ
 
@@ -408,16 +427,30 @@ await verifyAuthenticationResponse({
 
 ```
 POST /api/webauthn/attack/challenge-replay
+Content-Type: application/json
+
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  傍受 sessionId / 教育用 attestationObject / challenge は全てサーバー側のシード値から生成される。
+  zod スキーマ: webauthnAttackChallengeReplaySchema = z.object({}))
+
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形 (probe → tamper → forge → exploit → verify)
+  // data.blockedBy: "webauthn_challenge_one_time_consumed" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (interceptedSessionId / replayAttempt1Status / replayAttempt2Status / challengeConsumedAt 等)
 ```
 
-**リクエストボディ:**
+##### 期待結果
 
-```typescript
-{
-  targetUsername: string;     // 傍受した登録の対象ユーザー名 (デモ: "seed_alice")
-  attackerUsername: string;   // 攻撃者が使用するユーザー名 (デモ: "attacker_charlie")
-}
-```
+E-2 契約: 1 リクエストで両モード (脆弱: challenge 多重消費を許容、堅牢: challenges.delete 後の再使用拒否) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"webauthn_challenge_one_time_consumed"` (堅牢側 step 5: challenges.delete 後のリプレイで `No challenge found`) |
+| `steps[3].status` (脆弱側 exploit: 傍受 attestationObject の再送) | `"success"` (1回目の verify が観察される) |
+| `steps[4].status` (堅牢側 verify: 使い捨てチャレンジ設計) | `"blocked"` |
 
 **サーバー側処理の流れ:**
 
@@ -727,16 +760,20 @@ FIDO2 タブでは `outcome: "blocked"` が常に期待値のため、バナー�
 
 ### 6.1 バックエンドエンドポイントテスト
 
-| テスト ID | テスト内容 | 期待値 |
-|----------|-----------|--------|
-| T-01 | `POST /api/webauthn/attack/phishing-origin` — 正常リクエスト | `outcome: "blocked"`, `blockedBy` に "origin" を含む |
-| T-02 | `POST /api/webauthn/attack/phishing-origin` — `_trace.attackSteps` 検証 | `steps[3].status === "blocked"`, `steps[3].kind === "blocked"` |
-| T-03 | `POST /api/webauthn/attack/vs-password-phishing` — 両側の結果確認 | `data.passwordSide.outcome === "succeeded"`, `data.fido2Side.outcome === "blocked"` |
-| T-04 | `POST /api/webauthn/attack/challenge-replay` — ステップ数 | `steps.length === 6` |
-| T-05 | `POST /api/webauthn/attack/challenge-replay` — 最終ステップ | `steps[5].status === "blocked"` |
-| T-06 | 全エンドポイント — `_trace.attackSteps` が `attackSteps` として含まれる | `res._trace.attackSteps` が配列 |
-| T-07 | 全エンドポイント — レスポンスに `success: true` が含まれる | HTTP 200, `success: true` |
-| T-08 | 存在しないエンドポイント (`/attack/nonexistent`) | HTTP 404 |
+E-2 契約に準拠したテスト構成。各シナリオは 1 リクエストで両モード並列実行のため、`outcome === "succeeded"` 固定 + 5 ステップ完全形 + `blockedBy` で防御識別子を検証する。実装は `server/__tests__/webauthn-attack.test.ts`。
+
+| テストカテゴリ | 対象 | 期待値 |
+|------------|-----|--------|
+| E-2 不変条件 (it.each で 3 シナリオ共通) | `phishing-origin` / `vs-password-phishing` / `challenge-replay` | `status === 200` / `outcome === "succeeded"` / `steps.length === 5` / `_trace.attackSteps.length === 5` / `_trace.isAttackMode === true` |
+| logId 一意性 | 全 3 シナリオを連続実行 | `attack_log` テーブルに 3 件の独立 logId を確認 |
+| 本番ガード | `NODE_ENV=production` で全 3 ルート | `status === 403` |
+| summaryJa prefix | 全 3 シナリオ | 「この実装は」または「このシナリオでは」または「防御が機能しました」で始まる |
+| シナリオ A: blockedBy | `phishing-origin` | `"webauthn_origin_validation_enforced"` |
+| シナリオ A: extra フィールド | `phishing-origin` | `extra.attackerOrigin` / `extra.expectedOrigin` / `extra.clientDataJsonOrigin` を含む |
+| シナリオ B: blockedBy | `vs-password-phishing` | `"webauthn_origin_phishing_blocked"` |
+| シナリオ B: extra フィールド | `vs-password-phishing` | `extra.passwordSidePhishingSucceeded === true` / `extra.fido2SideOriginRejected === true` / `extra.comparisonNote` を含む |
+| シナリオ C: blockedBy | `challenge-replay` | `"webauthn_challenge_one_time_consumed"` |
+| シナリオ C: extra フィールド | `challenge-replay` | `extra.interceptedSessionId` / `extra.replayAttempt2Status === "blocked"` / `extra.challengeConsumedAt` を含む |
 
 ### 6.2 フロントエンド動作テスト
 

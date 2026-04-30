@@ -260,10 +260,15 @@ const stepsOauthStateCsrfDefended: AttackStep[] = [
 
 #### 期待結果
 
-| パターン | `outcome` | `blockedBy` | HTTP ステータス |
-|---------|-----------|-------------|---------------|
-| `useState: false` (脆弱) | `"succeeded"` | — | 200 |
-| `useState: true` (防御あり) | `"blocked"` | `"oauth_state_mismatch"` | 400 |
+E-2 契約: 各リクエストで両モード (脆弱+堅牢) を 1 リクエスト内で並列実行し、5 ステップ完全形 (probe → tamper → forge → exploit → verify) を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"oauth_state_mismatch"` (堅牢側 step 5 で state 不一致検出) |
+| `steps[4].status` (脆弱側 exploit) | `"success"` (state 検証なしで認可コード受理) |
+| `steps[5].status` (堅牢側 verify) | `"blocked"` |
 
 #### 防御策
 
@@ -299,15 +304,15 @@ sessionStorage.removeItem("oauth_state"); // 使用後は削除
 POST /api/oauth/attack/state-csrf
 Content-Type: application/json
 
-Request:
-{
-  "useState": boolean,          // true = 防御あり (state 検証実施), false = 脆弱 (検証なし)
-  "attackerCode": string,       // 攻撃者が取得した認可コード (攻撃デモでサーバーが生成)
-  "victimState"?: string,       // useState=true の場合: 被害者が送信した正規の state 値
-  "codeState"?: string          // コールバック URL に含まれる state (攻撃者由来: 空文字または不一致)
-}
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  攻撃者コード・state 値・被害者コンテキストは全てサーバー側のシード値から生成される。
+  zod スキーマ: oauthAttackStateCsrfSchema = z.object({}))
 
 Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形 (probe → tamper → forge → exploit → verify)
+  // data.blockedBy: "oauth_state_mismatch" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (attackerCodeId / victimState / codeState 等)
 ```
 
 #### _trace 設計
@@ -544,11 +549,15 @@ const stepRegexBad: AttackStep = {
 
 #### 期待結果
 
-| `validationMode` | `outcome` | `blockedBy` |
-|-----------------|-----------|-------------|
-| `"exact"` | `"blocked"` | `"oauth_redirect_uri_exact_match"` |
-| `"prefix"` | `"succeeded"` | — |
-| `"regex_bad"` | `"succeeded"` | — |
+E-2 契約: 1 リクエストで 3 つの検証モード (exact / prefix / regex_bad) を全て並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側 (exact match) で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"oauth_redirect_uri_exact_match"` (堅牢側 step 5: exact match で攻撃 URI 拒否) |
+| `steps[4].status` (脆弱側 exploit: prefix + regex_bad) | `"success"` (両方の脆弱版で攻撃 URI 受理) |
+| `steps[5].status` (堅牢側 verify: exact match) | `"blocked"` |
 
 #### 防御策
 
@@ -577,15 +586,16 @@ const isValid = registeredUris.includes(redirectUri); // OK
 POST /api/oauth/attack/redirect-uri-bypass
 Content-Type: application/json
 
-Request:
-{
-  "validationMode": "exact" | "prefix" | "regex_bad",  // 検証モード
-  "attackerRedirectUri": string,                        // 攻撃者が試みる redirect_uri
-  "username": string,                                   // 認証に使うユーザー名 (seed_alice 等)
-  "password": string                                    // パスワード
+Request: {
+  "attackerRedirectUri"?: string  // 攻撃者が試みる redirect_uri (省略時はシード値を使用、最大 512 文字)
 }
+  // E-2: 検証モード選択不要。ハンドラが exact / prefix / regex_bad を全て並列実行する。
+  // zod スキーマ: oauthAttackRedirectUriBypassSchema = z.object({ attackerRedirectUri: z.string().max(512).optional() })
 
 Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形
+  // data.blockedBy: "oauth_redirect_uri_exact_match" (堅牢側で発火)
 ```
 
 #### _trace 設計
@@ -817,10 +827,15 @@ const stepPkceProtected: AttackStep = {
 
 #### 期待結果
 
-| `pkceEnabled` | `outcome` | `blockedBy` |
-|--------------|-----------|-------------|
-| `false` (PKCE なし) | `"succeeded"` | — |
-| `true` (PKCE あり) | `"blocked"` | `"pkce_code_verifier_missing"` |
+E-2 契約: 1 リクエストで PKCE なし (脆弱) と PKCE あり (堅牢) の両方を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"pkce_code_verifier_missing"` (堅牢側 step 5: code_verifier 欠如で拒否) |
+| `steps[4].status` (脆弱側 exploit: PKCE なし) | `"success"` (盗まれたコードでトークン交換成立) |
+| `steps[5].status` (堅牢側 verify: PKCE あり) | `"blocked"` |
 
 #### 防御策
 
@@ -868,39 +883,18 @@ POST /api/oauth/token
 POST /api/oauth/attack/code-via-referer
 Content-Type: application/json
 
-Request:
-{
-  "stolenCode": string,       // 傍受されたとする認可コード (サーバーが生成して提供)
-  "clientId": string,         // クライアント ID
-  "clientSecret": string,     // クライアントシークレット
-  "pkceEnabled": boolean      // true = PKCE 保護あり (code_verifier 要求で blocked), false = 脆弱
-}
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  傍受コード・client 認証情報・PKCE 設定は全てサーバー側のシード値から生成される。
+  zod スキーマ: oauthAttackCodeViaRefererSchema = z.object({}))
 
 Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形
+  // data.blockedBy: "pkce_code_verifier_missing" (堅牢側で発火)
+  // data.extra: { stolenCode, simulatedReferer, codeChallenge?, ... }
 ```
 
-**補助エンドポイント:**
-
-```
-POST /api/oauth/attack/code-via-referer/setup
-Content-Type: application/json
-
-Request:
-{
-  "username": string,    // seed_alice 等
-  "password": string,
-  "pkceEnabled": boolean // 認可コード生成時に code_challenge を付与するか
-}
-
-Response: {
-  data: {
-    code: string,         // 被害者の認可コード (デモで傍受されたとみなすコード)
-    simulatedReferer: string,  // 漏洩した Referer ヘッダの値
-    codeChallenge?: string     // pkceEnabled=true の場合のみ
-  },
-  _trace: ServerTrace
-}
-```
+**補助エンドポイント:** 廃止 (E-2 契約で統合済み)。攻撃シミュレーションに必要なシード値生成・Referer ヘッダの偽装・code_challenge 付与は全てメインのハンドラ内で完結する (1 リクエストで両モード並列実行 — Phase 2 第三コミット e336b6c で実装)。
 
 #### _trace 設計
 
@@ -1047,100 +1041,86 @@ export default function OAuthAttackPanel() {
 
 ### 6.1 バックエンド単体テスト (Vitest)
 
-#### シナリオ A: state-csrf
+E-2 契約に準拠したテスト構成。各シナリオは 1 リクエストで両モード並列実行のため、`outcome === "succeeded"` 固定 + 5 ステップ完全形 + `blockedBy` で防御識別子を検証する。実装は `server/__tests__/oauth-attack.test.ts` (Phase 2 第三コミット e336b6c)。
 
 ```typescript
-// server/routes/attack-oauth.test.ts
+// server/__tests__/oauth-attack.test.ts (実装抜粋)
 
-describe("POST /api/oauth/attack/state-csrf", () => {
-  test("useState=false: 脆弱モードで outcome=succeeded を返す", async () => {
+// it.each で 3 シナリオ共通の不変条件を一括検証
+it.each([
+  { id: "oauth-state-csrf", route: "/api/oauth/attack/state-csrf", expectedBlockedBy: "oauth_state_mismatch" },
+  { id: "oauth-redirect-uri-bypass", route: "/api/oauth/attack/redirect-uri-bypass", expectedBlockedBy: "oauth_redirect_uri_exact_match" },
+  { id: "oauth-code-via-referer", route: "/api/oauth/attack/code-via-referer", expectedBlockedBy: "pkce_code_verifier_missing" },
+])("$id: E-2 不変条件 (両モード並列実行)", async ({ id, route, expectedBlockedBy }) => {
+  const res = await app.request(route, {
+    method: "POST",
+    body: JSON.stringify({}),
+    headers: { "Content-Type": "application/json" },
+  });
+  expect(res.status).toBe(200);  // E-2: HTTP ステータス常に 200
+  const body = await res.json();
+  expect(body.data.scenarioId).toBe(id);
+  expect(body.data.outcome).toBe("succeeded");  // E-2: outcome 常に "succeeded"
+  expect(body.data.steps).toHaveLength(5);  // E-2: 5 ステップ完全形 (probe → tamper → forge → exploit → verify)
+  expect(body.data.blockedBy).toBe(expectedBlockedBy);  // 堅牢側で発火した防御識別子
+  expect(body.data.logId).toBeGreaterThan(0);  // attack_log への記録
+  expect(body._trace.isAttackMode).toBe(true);
+  expect(body._trace.attackSteps).toHaveLength(5);
+});
+
+// シナリオ A: state-csrf — extra フィールド (attackerCodeId / victimState / codeState) 検証
+test("state-csrf: extra に attackerCodeId / victimState / codeState を含む", async () => {
+  const res = await app.request("/api/oauth/attack/state-csrf", {
+    method: "POST", body: JSON.stringify({}),
+    headers: { "Content-Type": "application/json" },
+  });
+  const body = await res.json();
+  expect(body.data.extra).toBeDefined();
+  expect(body.data.extra.attackerCodeId).toMatch(/^ATTACKER_CODE_/);
+  expect(body.data.extra.victimState).toBeTypeOf("string");
+  expect(body.data.steps[3].status).toBe("success");  // 脆弱側 exploit (state 検証なし → 認可コード受理)
+  expect(body.data.steps[4].status).toBe("blocked");  // 堅牢側 verify (state 不一致で拒否)
+});
+
+// シナリオ B: redirect-uri-bypass — extra に exact / prefix / regex_bad の 3 検証結果
+test("redirect-uri-bypass: extra に 3 検証モードの結果を含む", async () => {
+  const res = await app.request("/api/oauth/attack/redirect-uri-bypass", {
+    method: "POST", body: JSON.stringify({}),
+    headers: { "Content-Type": "application/json" },
+  });
+  const body = await res.json();
+  expect(body.data.extra).toBeDefined();
+  expect(body.data.extra.exactValidationResult).toBe("rejected");  // 堅牢側
+  expect(body.data.extra.prefixValidationResult).toBe("accepted");  // 脆弱側 1
+  expect(body.data.extra.regexBadValidationResult).toBe("accepted");  // 脆弱側 2
+});
+
+// シナリオ C: code-via-referer — extra に stolenCode / simulatedReferer / codeChallenge
+test("code-via-referer: extra に stolenCode / simulatedReferer / codeChallenge を含む", async () => {
+  const res = await app.request("/api/oauth/attack/code-via-referer", {
+    method: "POST", body: JSON.stringify({}),
+    headers: { "Content-Type": "application/json" },
+  });
+  const body = await res.json();
+  expect(body.data.extra).toBeDefined();
+  expect(body.data.extra.stolenCode).toMatch(/^[A-Z0-9]+$/);
+  expect(body.data.extra.simulatedReferer).toContain("code=");
+  expect(body.data.extra.codeChallenge).toBeTypeOf("string");
+});
+
+// 本番ガード (NODE_ENV=production で 403)
+test("attack ルートは NODE_ENV=production で 403 を返す", async () => {
+  const prevEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+  try {
     const res = await app.request("/api/oauth/attack/state-csrf", {
-      method: "POST",
-      body: JSON.stringify({ useState: false, attackerCode: "ATTACKER_CODE" }),
+      method: "POST", body: JSON.stringify({}),
       headers: { "Content-Type": "application/json" },
     });
-    const body = await res.json();
-    expect(body.data.outcome).toBe("succeeded");
-    expect(body._trace.attackSteps).toHaveLength(4);
-  });
-
-  test("useState=true: 防御モードで outcome=blocked, blockedBy=oauth_state_mismatch を返す", async () => {
-    const res = await app.request("/api/oauth/attack/state-csrf", {
-      method: "POST",
-      body: JSON.stringify({
-        useState: true,
-        attackerCode: "ATTACKER_CODE",
-        victimState: "state_legit",
-        codeState: "",
-      }),
-      headers: { "Content-Type": "application/json" },
-    });
-    const body = await res.json();
-    expect(body.data.outcome).toBe("blocked");
-    expect(body.data.blockedBy).toBe("oauth_state_mismatch");
-  });
-});
-```
-
-#### シナリオ B: redirect-uri-bypass
-
-```typescript
-describe("POST /api/oauth/attack/redirect-uri-bypass", () => {
-  const attackerUri = "http://localhost:3000/auth/oauth/callbackXattacker.example";
-
-  test("exact モード: 攻撃 URI を拒否 (blocked)", async () => {
-    const res = await request("POST", "/api/oauth/attack/redirect-uri-bypass", {
-      validationMode: "exact", attackerRedirectUri: attackerUri,
-      username: "seed_alice", password: "Passw0rd!"
-    });
-    expect(res.data.outcome).toBe("blocked");
-    expect(res.data.blockedBy).toBe("oauth_redirect_uri_exact_match");
-  });
-
-  test("prefix モード: 攻撃 URI が通過 (succeeded)", async () => {
-    const res = await request("POST", "/api/oauth/attack/redirect-uri-bypass", {
-      validationMode: "prefix", attackerRedirectUri: attackerUri,
-      username: "seed_alice", password: "Passw0rd!"
-    });
-    expect(res.data.outcome).toBe("succeeded");
-  });
-
-  test("regex_bad モード: ドットエスケープ漏れで通過 (succeeded)", async () => {
-    const res = await request("POST", "/api/oauth/attack/redirect-uri-bypass", {
-      validationMode: "regex_bad", attackerRedirectUri: attackerUri,
-      username: "seed_alice", password: "Passw0rd!"
-    });
-    expect(res.data.outcome).toBe("succeeded");
-  });
-});
-```
-
-#### シナリオ C: code-via-referer
-
-```typescript
-describe("POST /api/oauth/attack/code-via-referer", () => {
-  test("pkceEnabled=false: コードのみでトークン交換が成立 (succeeded)", async () => {
-    const setup = await request("POST", "/api/oauth/attack/code-via-referer/setup", {
-      username: "seed_alice", password: "Passw0rd!", pkceEnabled: false
-    });
-    const res = await request("POST", "/api/oauth/attack/code-via-referer", {
-      stolenCode: setup.data.code, clientId: "demo-app",
-      clientSecret: "demo-secret-12345", pkceEnabled: false
-    });
-    expect(res.data.outcome).toBe("succeeded");
-  });
-
-  test("pkceEnabled=true: code_verifier なしでブロック (blocked)", async () => {
-    const setup = await request("POST", "/api/oauth/attack/code-via-referer/setup", {
-      username: "seed_alice", password: "Passw0rd!", pkceEnabled: true
-    });
-    const res = await request("POST", "/api/oauth/attack/code-via-referer", {
-      stolenCode: setup.data.code, pkceEnabled: true
-      // code_verifier を意図的に省略
-    });
-    expect(res.data.outcome).toBe("blocked");
-    expect(res.data.blockedBy).toBe("pkce_code_verifier_missing");
-  });
+    expect(res.status).toBe(403);
+  } finally {
+    process.env.NODE_ENV = prevEnv;
+  }
 });
 ```
 

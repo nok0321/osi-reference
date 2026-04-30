@@ -176,14 +176,12 @@ Step 4 [blocked] 防御版比較: 正常実装ではログイン時に ID が変
 
 #### 4.1.3 バックエンド API 仕様
 
-**エンドポイント群:** `POST/GET /api/session/attack/fixation/*`
+**エンドポイント:** `POST /api/session/attack/fixation`
 
-| パス | メソッド | 説明 |
-|------|---------|------|
-| `/api/session/attack/fixation/setup` | GET | 攻撃者用の事前セッション ID を発行 |
-| `/api/session/attack/fixation/inject` | POST | 被害者ログインをセッション再生成なしで実行 |
-| `/api/session/attack/fixation/steal` | GET | 固定済みセッションで被害者リソースを取得 |
-| `/api/session/attack/fixation/compare-defense` | POST | 防御版との比較 (新規 ID 発行で攻撃ブロック) |
+E-2 契約: 1 リクエストで両モード (脆弱+堅牢) を並列実行する単一エンドポイントに統合済み (Phase 2 第五コミット 126c4fd)。
+- Request: `{}` (空 body — `sessionAttackFixationSchema = z.object({})`)
+- Response: `{ data: AttackResult, _trace: ServerTrace }` — outcome 常に `"succeeded"`、HTTP 200 固定、5 ステップ完全形 (probe → tamper → forge → exploit → verify)
+- 攻撃者用 SID 生成・被害者ログイン・固定 SID でのアクセス試行・新規 ID 再生成防御は全てハンドラ内で完結
 
 **シードユーザー:** `seed_alice` (被害者), `attacker_charlie` (攻撃者)
 
@@ -203,10 +201,16 @@ trace.addSessionOp({
 
 #### 4.1.4 AttackResult
 
-| 条件 | outcome | blockedBy |
-|------|---------|-----------|
-| 脆弱版: セッション再生成なし | `"success"` | — |
-| 防御版: ログイン後に新規 ID 発行 | `"blocked"` | `"ログイン後のセッション ID 再生成 (session-auth.ts L.36-43)"` |
+E-2 契約: outcome は常に `"succeeded"` 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"session_id_regenerated_after_login"` (堅牢側 step 5: uuidv4() で新規 ID 発行) |
+| `steps[3].status` (脆弱側 exploit: 再生成なし) | `"success"` (固定 SID でアクセス成立) |
+| `steps[4].status` (堅牢側 verify: 再生成あり) | `"blocked"` |
+| `extra.victimSeedFound` | `boolean` (seed_alice 不在時は false で safe スキップ) |
 
 #### 4.1.5 防御策 (AttackDefensePanel 用)
 
@@ -282,17 +286,14 @@ Step 3 [verify] HttpOnly あり版でログインし、同じ操作を試みる
 
 #### 4.2.3 バックエンド API 仕様
 
-**エンドポイント群:** `POST /api/session/attack/xss-cookie-theft/*`
+**エンドポイント:** `POST /api/session/attack/xss-cookie-theft`
 
-| パス | メソッド | 説明 |
-|------|---------|------|
-| `/api/session/attack/xss-cookie-theft/login-vulnerable` | POST | HttpOnly なしで Cookie を発行 (脆弱版) |
-| `/api/session/attack/xss-cookie-theft/login-protected` | POST | HttpOnly=true で Cookie を発行 (防御版) |
-| `/api/session/attack/xss-cookie-theft/simulate-xss` | POST | XSS による Cookie 読み取りをサーバー側で再現 |
+E-2 契約: 1 リクエストで HttpOnly なし (脆弱) と HttpOnly あり (堅牢) の両モードを in-memory simulation で並列比較する (DB 書き込みなし)。
+- Request: `{}` (空 body — `sessionAttackXssCookieTheftSchema = z.object({})`)
+- Response: `{ data: AttackResult, _trace: ServerTrace }` — outcome 常に `"succeeded"`、HTTP 200 固定、5 ステップ完全形
 
-**重要:** `simulate-xss` エンドポイントは、リクエストボディに含まれる
-`cookieString` をそのままエコーバックすることで「JS が document.cookie を読めた」
-状況を教育的に再現する。実際のスクリプト実行・DOM 操作は一切行わない。
+**重要:** ハンドラは、模擬 Cookie 文字列のサーバー側エコーバックで「JS が document.cookie を読めた」
+状況を教育的に再現する。実際のスクリプト実行・DOM 操作は一切行わない (実装コメントで 4 箇所明示)。
 
 **`_trace` 拡張:**
 ```typescript
@@ -309,10 +310,15 @@ trace.addSessionOp({
 
 #### 4.2.4 AttackResult
 
-| 条件 | outcome | blockedBy |
-|------|---------|-----------|
-| HttpOnly なし: JS から Cookie 読み取り成功 | `"success"` | — |
-| HttpOnly あり: Cookie は JS から不可視 | `"blocked"` | `"HttpOnly 属性 (session-auth.ts L.52)"` |
+E-2 契約: outcome は常に `"succeeded"` 固定。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"cookie_httponly_attribute_enforced"` (堅牢側 step 5: HttpOnly で Cookie 読み取り不可) |
+| `steps[3].status` (脆弱側 exploit: HttpOnly なし) | `"success"` (JS から Cookie 読み取り成立シミュレーション) |
+| `steps[4].status` (堅牢側 verify: HttpOnly あり) | `"blocked"` |
 
 #### 4.2.5 防御策 (AttackDefensePanel 用)
 
@@ -399,19 +405,19 @@ Step 4 [verify] 防御強化版: 短寿命 + リフレッシュトークン回�
 
 #### 4.3.3 バックエンド API 仕様
 
-**エンドポイント群:** `POST /api/token/attack/replay/*`
+**エンドポイント:** `POST /api/token/attack/replay`
 
-| パス | メソッド | 説明 |
-|------|---------|------|
-| `/api/token/attack/replay/setup` | POST | seed_alice のトークンを発行 (傍受シミュレーション用) |
-| `/api/token/attack/replay/use` | POST | 指定 delay 後のトークン使用を検証 |
-| `/api/token/attack/replay/refresh-rotation-demo` | POST | リフレッシュトークン回転の防御効果を確認 |
+E-2 契約: 1 リクエストでトークン即時リプレイ (脆弱) と有効期限超過後の検証 (堅牢) を並列実行する単一エンドポイント (Phase 2 第五コミット 126c4fd)。
+- Request: `{ scenarioDelay?: number }` (秒数、0=即時、960=16分=有効期限超過、デフォルト 960)
+  - zod スキーマ: `tokenAttackReplaySchema = z.object({ scenarioDelay: z.number().int().min(0).max(86400).default(960) })`
+  - handler 内で `Math.max(scenarioDelay, expiresInSec+1)` (expiresInSec=900) に正規化
+- Response: `{ data: AttackResult, _trace: ServerTrace }` — outcome 常に `"succeeded"`、HTTP 200 固定、5 ステップ完全形
 
 **`scenarioDelay` の扱い:**
 `scenarioDelay` はフロントエンドから秒数として送り、サーバー側で
-「現在時刻 - scenarioDelay 秒」に発行されたとして JWT の `iat`/`exp` を検証する。
-実際に待機するのではなく、サーバーが擬似的な時刻を使って検証結果を返す
-（教育上の簡略化）。
+「現在時刻 + scenarioDelay 秒」を verify ステップでの仮想検証時刻として使用する。
+実際に待機するのではなく、`jwt.verify` の `clockTimestamp` オプション (秒単位) で検証時刻を上書きして
+TokenExpiredError を発火させる（教育上の簡略化）。
 
 ```typescript
 // サーバー側での時刻オフセット検証 (概念)
@@ -433,11 +439,17 @@ trace.addCryptoOp({
 
 #### 4.3.4 AttackResult
 
-| 条件 | outcome | blockedBy |
-|------|---------|-----------|
-| 有効期限内 (15分未満): リプレイ成立 | `"success"` | — |
-| 有効期限切れ (15分超): リプレイ失敗 | `"blocked"` | `"JWT 有効期限検証 (token-auth.ts L.103)"` |
-| リフレッシュトークン回転: 再使用失敗 | `"blocked"` | `"refresh_tokens.revoked フラグ (token-auth.ts L.160-170)"` |
+E-2 契約: outcome は常に `"succeeded"` 固定。リフレッシュトークン回転防御は `extra.rotationNote` に補足記録される。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"jwt_expiry_validation_enforced"` (堅牢側 step 5: TokenExpiredError) |
+| `steps[3].status` (脆弱側 exploit: scenarioDelay=0 即時リプレイ) | `"success"` |
+| `steps[4].status` (堅牢側 verify: clockTimestamp で 16 分後検証) | `"blocked"` |
+| `extra.rotationNote` | リフレッシュトークン回転防御 (`refresh_tokens.revoked` フラグ) の補足説明 |
+| `extra.victimSeedFound` | `boolean` (seed_alice 不在時は sub:0 偽トークン残留を防ぐ) |
 
 #### 4.3.5 防御策 (AttackDefensePanel 用)
 
@@ -602,17 +614,25 @@ const [defenseResult, setDefenseResult] = createSignal<DefenseResult | null>(nul
 
 ### 6.1 バックエンド API テスト
 
-| テストケース | 対象エンドポイント | 期待値 |
-|------------|-----------------|--------|
-| セッション固定: 再生成なしでログイン → 固定 SID でアクセス成功 | `fixation/inject` + `fixation/steal` | 200 OK |
-| セッション固定: 防御版では旧 SID が無効化される | `fixation/compare-defense` | 401 Unauthorized |
-| XSS 窃取: HttpOnly なしの Cookie は readable=true | `xss-cookie-theft/simulate-xss` | `readable: true` |
-| XSS 窃取: HttpOnly ありの Cookie は readable=false | `xss-cookie-theft/simulate-xss` | `readable: false` |
-| トークンリプレイ: 有効期限内 (delay=0) は 200 | `replay/use` (delay=0) | 200 OK |
-| トークンリプレイ: 有効期限後 (delay=960) は 401 | `replay/use` (delay=960) | 401 Unauthorized |
-| リフレッシュ回転: 旧リフレッシュトークン再使用は 401 | `replay/refresh-rotation-demo` | `oldRefreshRevoked: true` |
-| 全 attack ルート: `_trace.isAttackMode` が true | 全攻撃エンドポイント | `_trace.isAttackMode === true` |
-| 全 attack ルート: 外部 URL へのリクエストが発生しない | — | ネットワーク呼び出しなし |
+E-2 契約に準拠した不変条件ベースのテスト構成。各シナリオは 1 リクエストで両モード並列実行のため、`outcome === "succeeded"` 固定 + 5 ステップ完全形 + `blockedBy` で防御識別子を検証する。実装は `server/__tests__/session-token-attack.test.ts` (Phase 2 第五コミット 126c4fd)。
+
+| テストカテゴリ | 対象 | 期待値 |
+|------------|-----|--------|
+| E-2 不変条件 (it.each で 3 シナリオ共通) | `fixation` / `xss-cookie-theft` / `replay` | `status === 200` / `outcome === "succeeded"` / `steps.length === 5` / `_trace.attackSteps.length === 5` |
+| logId 一意性 | 全 3 シナリオを連続実行 | `attack_log` テーブルに 3 件の独立 logId を確認 |
+| 本番ガード | `NODE_ENV=production` で全 3 ルート | `status === 403` |
+| summaryJa prefix | 全 3 シナリオ | 「この実装は」または「このシナリオでは」で始まる |
+| `_trace.isAttackMode` | 全攻撃エンドポイント | `true` |
+| 外部 URL リクエスト | — | ネットワーク呼び出しなし |
+| シナリオ A: extra.victimSeedFound | `fixation` | seed_alice 存在時 true / 不在時 false で safe スキップ |
+| シナリオ A: blockedBy | `fixation` | `"session_id_regenerated_after_login"` |
+| シナリオ A: HTTP status SSoT | `FIXATION_VULN_HTTP_STATUS=200` / `FIXATION_DEFENDED_HTTP_STATUS=401` を payload.response.status と extra で共有 |
+| シナリオ B: extra.cookieReadable | `xss-cookie-theft` | 脆弱側 true / 堅牢側 false |
+| シナリオ B: blockedBy | `xss-cookie-theft` | `"cookie_httponly_attribute_enforced"` |
+| シナリオ C: scenarioDelay 正規化 | `replay` | handler 内で `Math.max(scenarioDelay, expiresInSec+1)` 適用 |
+| シナリオ C: blockedBy | `replay` | `"jwt_expiry_validation_enforced"` |
+| シナリオ C: extra.rotationNote | `replay` | リフレッシュトークン回転防御の補足あり |
+| `delayedReplayValid` 不変条件 | `replay` | step 5 status === "blocked" のとき `delayedReplayValid === false` |
 
 ### 6.2 フロントエンド (Vitest) テスト要件
 

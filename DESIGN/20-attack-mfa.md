@@ -289,23 +289,15 @@ const steps: AttackStep[] = [
 
 #### 期待される結果 (AttackResult)
 
-```typescript
-const result: AttackResult = {
-  scenarioId: "mfa-otp-replay",
-  outcome: "succeeded",   // 使用済み OTP DB なし実装では攻撃が成立
-  startedAt: /* Unix ms */,
-  finishedAt: /* Unix ms */,
-  steps,
-  blockedBy: "used_otps テーブルによる使用済み OTP 記録",
-  summary: "Without used-OTP tracking, a replayed TOTP code is accepted a second time. Tracking consumed OTPs blocks the replay.",
-  summaryJa: "使用済み OTP を記録しない実装では、同一 OTP コードが2回目も受理されます。使用済み記録によりリプレイを阻止できます。",
-};
-```
+E-2 契約: 1 リクエストで両モード (脆弱: 使用済み OTP 記録なし、堅牢: used_otps テーブルで `(user_id, counter)` を一意制約) を並列実行し、5 ステップ完全形 (probe → tamper → forge → exploit → verify) を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
 
-UI 上の表示:
-- step-1: 傍受 (オレンジ)
-- step-2: 攻撃成立 (赤)  — 使用済み DB なし
-- step-3: 防御成立 (緑)  — 使用済み DB あり
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"used_otp_record_blocks_replay"` (堅牢側 step 5: used_otps テーブルの `(user_id, counter)` 一意制約で再送拒否) |
+| `steps[3].status` (脆弱側 exploit: 使用済み DB なし) | `"success"` (傍受 OTP コードの再送が受理される) |
+| `steps[4].status` (堅牢側 verify: used_otps チェック) | `"blocked"` |
 
 #### 防御策 (defenseRecommendation)
 
@@ -354,125 +346,17 @@ db.prepare("INSERT OR IGNORE INTO used_otps (user_id, counter) VALUES (?, ?)")
 
 ```
 POST /api/mfa/attack/otp-replay
-```
+Content-Type: application/json
 
-**リクエスト**:
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  傍受 OTP コード / counter 値 / used_otps テーブルチェックは全てサーバー側のシード値から生成される。
+  zod スキーマ: mfaAttackOtpReplaySchema = z.object({}))
 
-```json
-{
-  "username": "seed_alice",
-  "code": "847291",
-  "replayAttempt": true,
-  "replayDefenseEnabled": false
-}
-```
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `username` | `string` | 必須 | 固定シードユーザー名 (`seed_alice` / `seed_bob` のみ受け付ける) |
-| `code` | `string` | 必須 | 6桁 OTP コード文字列 |
-| `replayAttempt` | `boolean` | 任意 | `true` の場合、サーバーはこのコードが既に1回使用済みである状態をシミュレートする |
-| `replayDefenseEnabled` | `boolean` | 任意 | `true` の場合、使用済み OTP DB のチェックを有効にする (デフォルト `false`) |
-
-**レスポンス (防御なし、リプレイ成立)**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "mfa-otp-replay",
-    "outcome": "succeeded",
-    "startedAt": 1745592000000,
-    "finishedAt": 1745592000080,
-    "steps": [
-      {
-        "id": "step-1",
-        "kind": "intercept",
-        "label": "Observe TOTP code used by legitimate user",
-        "labelJa": "正規ユーザーが使用した TOTP コードを観測",
-        "status": "success",
-        "payload": { "type": "generic", "data": { "username": "seed_alice", "observedCode": "847291" } },
-        "timestamp": 1745592000010
-      },
-      {
-        "id": "step-2",
-        "kind": "exploit",
-        "label": "Replay the same OTP code (no used-OTP DB)",
-        "labelJa": "同一 OTP コードを再送 (使用済み DB なし)",
-        "status": "success",
-        "payload": { "type": "http", "request": { "method": "POST", "url": "/api/mfa/attack/otp-replay", "body": { "code": "847291", "replayDefenseEnabled": false } }, "response": { "status": 200, "body": { "outcome": "succeeded" } } },
-        "timestamp": 1745592000060
-      }
-    ],
-    "summary": "Replayed OTP was accepted. No used-OTP record was found.",
-    "summaryJa": "リプレイされた OTP が受理されました。使用済み記録が存在しません。"
-  },
-  "_trace": {
-    "dbQueries": [
-      {
-        "sql": "SELECT secret FROM user_mfa WHERE user_id = ?",
-        "params": [1],
-        "rows": [{ "secret": "JBSWY3D..." }],
-        "ms": 0.9
-      },
-      {
-        "sql": "SELECT id FROM used_otps WHERE user_id = ? AND counter = ?",
-        "params": [1, 58203],
-        "rows": [],
-        "ms": 0.4
-      }
-    ],
-    "cryptoOps": [
-      {
-        "op": "totp.verify",
-        "input": "code=\"847291\", counter_base=58203, window=±1",
-        "output": "MATCH ✓ at counter=58203",
-        "algo": "HMAC-SHA1 + Dynamic Truncation (RFC 6238)",
-        "detail": "OTP validated. No used-OTP record checked — replay succeeds."
-      }
-    ],
-    "attackSteps": [],
-    "isAttackMode": true
-  }
-}
-```
-
-**レスポンス (防御あり、リプレイ阻止)**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "mfa-otp-replay",
-    "outcome": "blocked",
-    "blockedBy": "used_otps DB record",
-    "steps": [
-      {
-        "id": "step-3",
-        "kind": "blocked",
-        "label": "Replay blocked by used-OTP DB",
-        "labelJa": "使用済み OTP DB がリプレイをブロック",
-        "status": "blocked",
-        "payload": { "type": "http", "response": { "status": 401, "body": { "error": "OTP already used. Please wait for the next code." } } },
-        "timestamp": 1745592000080
-      }
-    ],
-    "summary": "Replay blocked: OTP counter 58203 already recorded in used_otps.",
-    "summaryJa": "リプレイがブロックされました: OTP カウンター 58203 は used_otps に記録済みです。"
-  },
-  "_trace": {
-    "dbQueries": [
-      {
-        "sql": "SELECT id FROM used_otps WHERE user_id = ? AND counter = ?",
-        "params": [1, 58203],
-        "rows": [{ "id": 7, "user_id": 1, "counter": 58203 }],
-        "ms": 0.5
-      }
-    ],
-    "cryptoOps": [],
-    "isAttackMode": true
-  }
-}
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形 (probe → tamper → forge → exploit → verify)
+  // data.blockedBy: "used_otp_record_blocks_replay" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (interceptedOtp / counterValue / vulnerableReplayAccepted / defendedRejectedReason 等)
 ```
 
 #### _trace 内訳
@@ -659,18 +543,15 @@ const steps: AttackStep[] = [
 
 #### 期待される結果 (AttackResult)
 
-```typescript
-const result: AttackResult = {
-  scenarioId: "mfa-time-window-too-wide",
-  outcome: "succeeded",   // ±10 窓では攻撃が成立
-  startedAt: /* Unix ms */,
-  finishedAt: /* Unix ms */,
-  steps,
-  blockedBy: "TOTP ウィンドウ ±1 設定",
-  summary: "With ±10 time window, a 90-second-old OTP is accepted. ±1 window correctly rejects it.",
-  summaryJa: "±10 時刻窓では 90 秒前の OTP が受理されます。±1 窓では正しく拒否されます。",
-};
-```
+E-2 契約: 1 リクエストで両モード (脆弱: ウィンドウ ±10 設定、堅牢: ウィンドウ ±1 設定 + NIST SP 800-63B 準拠) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"totp_narrow_time_window_rejects_old_otp"` (堅牢側 step 5: ウィンドウ ±1 で 90 秒前の OTP を拒否) |
+| `steps[3].status` (脆弱側 exploit: ±10 窓) | `"success"` (90 秒前 = 3 ステップ前の OTP が ±10 で受理される) |
+| `steps[4].status` (堅牢側 verify: ±1 窓) | `"blocked"` |
 
 #### 防御策 (defenseRecommendation)
 
@@ -710,67 +591,17 @@ export function verifyTotpWithDetail(secret: string, code: string) {
 
 ```
 POST /api/mfa/attack/time-window-wide
-```
+Content-Type: application/json
 
-**リクエスト**:
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  ウィンドウサイズ ±1/±10 / 遅延シミュレーション値 / counter デルタは全てサーバー側のシード値から生成される。
+  zod スキーマ: mfaAttackTimeWindowWideSchema = z.object({}))
 
-```json
-{
-  "username": "seed_alice",
-  "code": "382047",
-  "windowSize": 10,
-  "simulatedDelaySeconds": 90
-}
-```
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `username` | `string` | 必須 | 固定シードユーザー名 |
-| `code` | `string` | 必須 | 6桁 OTP コード文字列 |
-| `windowSize` | `number` | 必須 | 検証に使用する時刻ウィンドウ (ステップ数)。有効値: `1` / `2` / `5` / `10` |
-| `simulatedDelaySeconds` | `number` | 任意 | OTP 観測から再送までの遅延をシミュレートする秒数 (デフォルト `90`) |
-
-**レスポンス (windowSize=10、リプレイ成立)**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "mfa-time-window-too-wide",
-    "outcome": "succeeded",
-    "startedAt": 1745592000000,
-    "finishedAt": 1745592000100,
-    "steps": [
-      {
-        "id": "step-3",
-        "kind": "exploit",
-        "label": "Replay at T+90s accepted by ±10 window",
-        "labelJa": "T+90s のリプレイが ±10 窓で受理",
-        "status": "success",
-        "payload": {
-          "type": "generic",
-          "data": { "windowSize": 10, "simulatedDelaySeconds": 90, "effectiveDeltaSteps": 3 }
-        },
-        "timestamp": 1745592000080
-      }
-    ],
-    "summary": "±10 window accepted a code issued 90s ago (3 steps away). Vulnerable.",
-    "summaryJa": "±10 窓は 90 秒前 (3 ステップ前) に発行されたコードを受理しました。脆弱です。"
-  },
-  "_trace": {
-    "cryptoOps": [
-      {
-        "op": "totp.verify (window=10)",
-        "input": "code=\"382047\", counter_base=58203, window=±10, simulated_delta=+3",
-        "output": "MATCH ✓ at counter=58200 (delta=-3, within ±10)",
-        "algo": "HMAC-SHA1 + Dynamic Truncation (RFC 6238)",
-        "detail": "Wide window ±10 accepted a code valid at counter=58200 (issued 90s ago, 3 steps back)"
-      }
-    ],
-    "dbQueries": [],
-    "isAttackMode": true
-  }
-}
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形
+  // data.blockedBy: "totp_narrow_time_window_rejects_old_otp" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (vulnerableWindowSize / defendedWindowSize / simulatedDelaySeconds / effectiveDeltaSteps 等)
 ```
 
 #### _trace 内訳
@@ -985,18 +816,15 @@ const steps: AttackStep[] = [
 
 #### 期待される結果 (AttackResult)
 
-```typescript
-const result: AttackResult = {
-  scenarioId: "mfa-sms-swap",
-  outcome: "succeeded",   // SMS OTP 経路では攻撃が成立
-  startedAt: /* Unix ms */,
-  finishedAt: /* Unix ms */,
-  steps,
-  blockedBy: "TOTP アプリのデバイスバインドシークレット",
-  summary: "SMS OTP is vulnerable to SIM swap: once phone number is forwarded, all SMS OTPs go to attacker. TOTP apps resist this attack.",
-  summaryJa: "SMS OTP は SIM スワップに脆弱です: 電話番号が転送されると以降の SMS OTP はすべて攻撃者に届きます。TOTP アプリはこの攻撃に耐性を持ちます。",
-};
-```
+E-2 契約: 1 リクエストで両モード (脆弱: SMS OTP — 電話番号依存、堅牢: TOTP — デバイスバインドシークレット) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"totp_device_bound_secret_resists_sim_swap"` (堅牢側 step 5: TOTP のデバイスバインドシークレットは電話番号転送で侵害されない) |
+| `steps[3].status` (脆弱側 exploit: SMS OTP 経路) | `"success"` (シミュレートされた SIM スワップで OTP が攻撃者端末に届く) |
+| `steps[4].status` (堅牢側 verify: TOTP デバイスバインド) | `"blocked"` |
 
 #### 防御策 (defenseRecommendation)
 
@@ -1041,155 +869,17 @@ type MfaChannel =
 
 ```
 POST /api/mfa/attack/sms-swap
-```
+Content-Type: application/json
 
-**リクエスト**:
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  パスワード第1要素 / SMS OTP / TOTP の両 MFA チャネル / SIM スワップシミュレーションは全てサーバー側のシード値から生成される。
+  zod スキーマ: mfaAttackSmsSwapSchema = z.object({}))
 
-```json
-{
-  "username": "seed_alice",
-  "password": "Passw0rd!",
-  "mfaChannel": "sms",
-  "simSwapSimulated": true
-}
-```
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `username` | `string` | 必須 | 固定シードユーザー名 |
-| `password` | `string` | 必須 | シードユーザーのパスワード (`Passw0rd!` 固定) |
-| `mfaChannel` | `"sms" \| "totp"` | 必須 | MFA チャネルの選択。`sms` で攻撃成立、`totp` でブロックを示す |
-| `simSwapSimulated` | `boolean` | 任意 | `true` の場合、SIM スワップが完了した状態をシミュレートする (デフォルト `true`) |
-
-**レスポンス (mfaChannel=sms、攻撃成立)**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "mfa-sms-swap",
-    "outcome": "succeeded",
-    "startedAt": 1745592000000,
-    "finishedAt": 1745592000120,
-    "steps": [
-      {
-        "id": "step-2",
-        "kind": "forge",
-        "label": "Simulate SIM swap: phone number forwarded to attacker device",
-        "labelJa": "SIM スワップをシミュレーション: 電話番号が攻撃者端末に転送",
-        "status": "success",
-        "payload": {
-          "type": "generic",
-          "data": {
-            "simSwapSimulated": true,
-            "smsRoutingChanged": true,
-            "note": "SIMULATION ONLY — not a reproduction of actual SIM swap technique"
-          }
-        },
-        "timestamp": 1745592000040
-      },
-      {
-        "id": "step-3",
-        "kind": "exploit",
-        "label": "SMS OTP delivered to attacker device",
-        "labelJa": "SMS OTP が攻撃者端末に届く",
-        "status": "success",
-        "payload": {
-          "type": "generic",
-          "data": { "mfaChannel": "sms", "smsReceivedBy": "attacker_charlie (simulated)", "otpCode": "573819" }
-        },
-        "timestamp": 1745592000100
-      }
-    ],
-    "summary": "SMS OTP is tied to phone number, not device. SIM swap simulation shows it can be redirected.",
-    "summaryJa": "SMS OTP は電話番号に紐付いており、デバイスには紐付いていません。SIM スワップシミュレーションで転送可能なことを示します。"
-  },
-  "_trace": {
-    "cryptoOps": [
-      {
-        "op": "bcrypt.compare",
-        "input": "password=\"[REDACTED]\" vs stored_hash",
-        "output": "MATCH ✓",
-        "algo": "bcrypt",
-        "detail": "Factor 1 (password) verified. Factor 2 (SMS OTP) now simulated as delivered to attacker."
-      },
-      {
-        "op": "sms.generate_otp (simulated)",
-        "input": "length=6, charset=numeric",
-        "output": "573819 → delivered to: attacker_charlie (SIM swap simulation)",
-        "algo": "CSPRNG (simulated)",
-        "detail": "[SIMULATION] In real systems, SMS OTP is sent to the registered phone number. SIM swap redirects this delivery."
-      }
-    ],
-    "dbQueries": [
-      {
-        "sql": "SELECT id, username, password_hash FROM users WHERE username = ? AND is_attack_sim = 0",
-        "params": ["seed_alice"],
-        "rows": [{ "id": 1, "username": "seed_alice", "password_hash": "$2a$10$..." }],
-        "ms": 1.1
-      }
-    ],
-    "sessionOps": [
-      {
-        "action": "SIM_SWAP_SIMULATION",
-        "data": {
-          "note": "Educational simulation — not an actual SIM swap. Demonstrates SMS OTP vulnerability concept.",
-          "originalDevice": "seed_alice_device",
-          "redirectedTo": "attacker_charlie_device (simulated)"
-        }
-      }
-    ],
-    "isAttackMode": true
-  }
-}
-```
-
-**レスポンス (mfaChannel=totp、ブロック)**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "mfa-sms-swap",
-    "outcome": "blocked",
-    "blockedBy": "device-bound TOTP secret",
-    "steps": [
-      {
-        "id": "step-4",
-        "kind": "blocked",
-        "label": "TOTP blocked: device-bound secret not transferred by SIM swap",
-        "labelJa": "TOTP がブロック: デバイスバインドシークレットは SIM スワップで転送されない",
-        "status": "blocked",
-        "payload": {
-          "type": "generic",
-          "data": {
-            "mfaChannel": "totp",
-            "simSwapEffect": "none",
-            "reason": "TOTP secret is stored in seed_alice's authenticator app. SIM swap only redirects SMS, not app secrets."
-          }
-        },
-        "timestamp": 1745592000100
-      }
-    ],
-    "summary": "TOTP resists SIM swap: device-bound secret cannot be redirected via phone number transfer.",
-    "summaryJa": "TOTP は SIM スワップに耐性あり: デバイスバインドシークレットは電話番号転送では移動しません。"
-  },
-  "_trace": {
-    "cryptoOps": [],
-    "dbQueries": [],
-    "sessionOps": [
-      {
-        "action": "SIM_SWAP_TOTP_RESISTANCE_CHECK",
-        "data": {
-          "mfaChannel": "totp",
-          "result": "blocked",
-          "reason": "TOTP secret bound to authenticator app on device, not to phone number"
-        }
-      }
-    ],
-    "isAttackMode": true
-  }
-}
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形
+  // data.blockedBy: "totp_device_bound_secret_resists_sim_swap" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (smsOtpDelivered / smsRedirectedTo / totpResistanceReason / vulnerableMfaChannel 等)
 ```
 
 #### _trace 内訳
@@ -1319,6 +1009,23 @@ interface SmsSwapScenarioProps {
 ## 6. テスト要件
 
 ### 6.1 ユニットテスト (バックエンドハンドラ単体)
+
+E-2 契約に準拠したテスト構成。各シナリオは 1 リクエストで両モード並列実行のため、`outcome === "succeeded"` 固定 + 5 ステップ完全形 + `blockedBy` で防御識別子を検証する。実装は `server/__tests__/mfa-attack.test.ts`。
+
+| テストカテゴリ | 対象 | 期待値 |
+|------------|-----|--------|
+| E-2 不変条件 (it.each で 3 シナリオ共通) | `otp-replay` / `time-window-wide` / `sms-swap` | `status === 200` / `outcome === "succeeded"` / `steps.length === 5` / `_trace.attackSteps.length === 5` / `_trace.isAttackMode === true` |
+| logId 一意性 | 全 3 シナリオを連続実行 | `attack_log` テーブルに 3 件の独立 logId を確認 |
+| 本番ガード | `NODE_ENV=production` で全 3 ルート | `status === 403` |
+| summaryJa prefix | 全 3 シナリオ | 「この実装は」または「このシナリオでは」で始まる |
+| シナリオ A: blockedBy | `otp-replay` | `"used_otp_record_blocks_replay"` |
+| シナリオ A: extra フィールド | `otp-replay` | `extra.interceptedOtp` / `extra.counterValue` / `extra.vulnerableReplayAccepted === true` / `extra.defendedRejectedReason` を含む |
+| シナリオ B: blockedBy | `time-window-wide` | `"totp_narrow_time_window_rejects_old_otp"` |
+| シナリオ B: extra フィールド | `time-window-wide` | `extra.vulnerableWindowSize === 10` / `extra.defendedWindowSize === 1` / `extra.simulatedDelaySeconds === 90` / `extra.effectiveDeltaSteps` を含む |
+| シナリオ C: blockedBy | `sms-swap` | `"totp_device_bound_secret_resists_sim_swap"` |
+| シナリオ C: extra フィールド | `sms-swap` | `extra.smsOtpDelivered` (脆弱側) / `extra.smsRedirectedTo` / `extra.totpResistanceReason` / `extra.vulnerableMfaChannel === "sms"` を含む |
+
+旧テスト ID マッピング (削除済み — Phase 2 で it.each 不変条件テストに統合):
 
 対象ファイル: `server/routes/attack-mfa.ts`
 

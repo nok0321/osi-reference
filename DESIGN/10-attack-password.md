@@ -236,22 +236,15 @@ const steps: AttackStep[] = [
 
 #### 期待される結果 (AttackResult)
 
-```typescript
-const result: AttackResult = {
-  scenarioId: "password-rainbow-vs-bcrypt",
-  outcome: "succeeded",  // SHA-1/MD5 については攻撃が成立
-  startedAt: /* Unix ms */,
-  finishedAt: /* Unix ms */,
-  steps,
-  summary: "SHA-1 and MD5 hashes were reversed in milliseconds via dictionary lookup. bcrypt with salt blocked the lookup entirely.",
-  summaryJa: "SHA-1 および MD5 ハッシュは辞書照合でミリ秒以内に逆引きされました。ソルト付き bcrypt は照合を完全に阻止しました。",
-};
-```
+E-2 契約: 1 リクエストで両モード (脆弱: SHA-1/MD5 unsalted、堅牢: bcrypt + salt) を並列実行し、5 ステップ完全形 (probe → tamper → forge → exploit → verify) を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
 
-UI 上の表示:
-- step-1〜3: 攻撃成立 (警告色オレンジ)
-- step-4: 防御成立 (緑)
-- 結果バナー: 「この実装は脆弱です: SHA-1/MD5 ハッシュはレインボーテーブルで即座に逆引きされました」
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"bcrypt_salt_and_cost_factor_defeats_rainbow_table_lookup"` (堅牢側 step 5: ソルト付き bcrypt がレインボーテーブル照合を阻止) |
+| `steps[3].status` (脆弱側 exploit: SHA-1/MD5 unsalted) | `"success"` (rainbow_table_sim から平文逆引き成立) |
+| `steps[4].status` (堅牢側 verify: bcrypt + salt) | `"blocked"` |
 
 #### 防御策 (defenseRecommendation)
 
@@ -294,114 +287,17 @@ const hash = await argon2.hash(password, {
 
 ```
 POST /api/auth/password/attack/rainbow-vs-bcrypt
-```
+Content-Type: application/json
 
-**リクエスト**:
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  攻撃対象平文・SHA-1/MD5/bcrypt ハッシュ・rainbow_table_sim 照合は全てサーバー側のシード値から生成される。
+  zod スキーマ: passwordAttackRainbowVsBcryptSchema = z.object({}))
 
-```json
-{
-  "username": "seed_alice",
-  "password": "password123",
-  "algorithm": "sha1"
-}
-```
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `username` | `string` | 必須 | 固定シードユーザー名 (`seed_alice` / `seed_bob` のみ受け付ける) |
-| `password` | `string` | 必須 | 試行するパスワード文字列 (最大 72 文字) |
-| `algorithm` | `"sha1" \| "md5" \| "bcrypt"` | 必須 | 比較に使用するハッシュアルゴリズム |
-
-**レスポンス**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "password-rainbow-vs-bcrypt",
-    "outcome": "succeeded",
-    "startedAt": 1745592000000,
-    "finishedAt": 1745592000045,
-    "steps": [
-      {
-        "id": "step-1",
-        "kind": "intercept",
-        "label": "Obtain password hash from leaked DB record",
-        "labelJa": "漏洩 DB レコードからパスワードハッシュを取得",
-        "status": "success",
-        "payload": {
-          "type": "credential",
-          "username": "seed_alice",
-          "passwordHashAlgo": "sha1"
-        },
-        "timestamp": 1745592000010
-      },
-      {
-        "id": "step-2",
-        "kind": "probe",
-        "label": "Query rainbow table for SHA-1 hash",
-        "labelJa": "SHA-1 ハッシュをレインボーテーブルで照合",
-        "status": "success",
-        "payload": {
-          "type": "credential",
-          "username": "seed_alice",
-          "passwordHashAlgo": "sha1",
-          "crackedPassword": "password123"
-        },
-        "timestamp": 1745592000025
-      },
-      {
-        "id": "step-4",
-        "kind": "verify",
-        "label": "Attempt rainbow table lookup for bcrypt hash",
-        "labelJa": "bcrypt ハッシュのレインボーテーブル照合を試行",
-        "status": "blocked",
-        "payload": {
-          "type": "credential",
-          "username": "seed_alice",
-          "passwordHashAlgo": "bcrypt"
-        },
-        "timestamp": 1745592000040
-      }
-    ],
-    "summary": "SHA-1 and MD5 hashes were reversed via dictionary lookup. bcrypt blocked the lookup.",
-    "summaryJa": "SHA-1 および MD5 ハッシュは辞書照合で逆引きされました。bcrypt は照合を阻止しました。"
-  },
-  "_trace": {
-    "cryptoOps": [
-      {
-        "op": "crypto.createHash(sha1)",
-        "input": "password=\\\"[REDACTED]\\\"",
-        "output": "cbfdac6008f9cab4083784cbd1874f76618d2a97",
-        "algo": "sha1",
-        "detail": "Unsalted SHA-1 hash. Fixed output for same input — rainbow table feasible."
-      },
-      {
-        "op": "rainbow_table.lookup",
-        "input": "hash=\\\"cbfdac6008f9cab4083784cbd1874f76618d2a97\\\"",
-        "output": "FOUND: password123",
-        "algo": "lookup",
-        "detail": "Hash found in precomputed dictionary in <1ms."
-      },
-      {
-        "op": "bcrypt.hash",
-        "input": "password=\\\"[REDACTED]\\\", saltRounds=10",
-        "output": "$2a$10$...(60 chars, unique per hash)",
-        "algo": "bcrypt",
-        "detail": "bcrypt includes random salt — same password produces different hash each time. Rainbow table infeasible."
-      }
-    ],
-    "dbQueries": [
-      {
-        "sql": "SELECT hash FROM rainbow_table_sim WHERE hash = ?",
-        "params": ["cbfdac6008f9cab4083784cbd1874f76618d2a97"],
-        "rows": [{ "hash": "cbfdac6008f9cab4083784cbd1874f76618d2a97", "plaintext": "password123" }],
-        "ms": 0.8
-      }
-    ],
-    "attackSteps": [ /* AttackStep[] — 上記 steps と同一 */ ]
-  }
-}
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形 (probe → tamper → forge → exploit → verify)
+  // data.blockedBy: "bcrypt_salt_and_cost_factor_defeats_rainbow_table_lookup" (堅牢側 verify で発火)
+  // data.extra: シナリオ固有フィールド (sha1Hash / md5Hash / bcryptHashSample / rainbowMatch 等)
 ```
 
 #### _trace 内訳
@@ -592,18 +488,15 @@ const steps: AttackStep[] = [
 
 #### 期待される結果 (AttackResult)
 
-```typescript
-const result: AttackResult = {
-  scenarioId: "password-timing-string-compare",
-  outcome: "succeeded",  // 脆弱な === 比較では攻撃が成立
-  startedAt: /* Unix ms */,
-  finishedAt: /* Unix ms */,
-  steps,
-  blockedBy: "crypto.timingSafeEqual による定数時間比較",
-  summary: "Short-circuit string comparison leaks timing information. crypto.timingSafeEqual eliminates the discrepancy.",
-  summaryJa: "短絡評価文字列比較はタイミング情報を漏洩します。crypto.timingSafeEqual が差異を排除します。",
-};
-```
+E-2 契約: 1 リクエストで両モード (脆弱: `===` 短絡評価、堅牢: `crypto.timingSafeEqual`) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"crypto_timing_safe_equal_eliminates_response_time_variance"` (堅牢側 step 5: 定数時間比較がタイミング差異を排除) |
+| `steps[3].status` (脆弱側 exploit: `===` 短絡評価) | `"success"` (matchedChars に比例した応答時間差異が観測される) |
+| `steps[4].status` (堅牢側 verify: `crypto.timingSafeEqual`) | `"blocked"` |
 
 #### 防御策 (defenseRecommendation)
 
@@ -649,80 +542,17 @@ const match = await bcrypt.compare(inputPassword, storedHash); // 安全
 
 ```
 POST /api/auth/password/attack/timing-string-compare
-```
+Content-Type: application/json
 
-**リクエスト**:
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  プローブパスワード列・ターゲット平文・応答時間シミュレーション値は全てサーバー側のシード値から生成される。
+  zod スキーマ: passwordAttackTimingStringCompareSchema = z.object({}))
 
-```json
-{
-  "username": "seed_alice",
-  "targetPassword": "password123",
-  "probePasswords": [
-    "x_______",
-    "pas_____",
-    "password123"
-  ]
-}
-```
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `username` | `string` | 必須 | 固定シードユーザー名 |
-| `targetPassword` | `string` | 必須 | 正解となるパスワード (シードユーザーのパスワード) |
-| `probePasswords` | `string[]` | 必須 | 計測対象のパスワード候補 (最大 5 件) |
-
-**レスポンス**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "password-timing-string-compare",
-    "outcome": "succeeded",
-    "startedAt": 1745592000000,
-    "finishedAt": 1745592000200,
-    "steps": [
-      {
-        "id": "step-1",
-        "kind": "probe",
-        "label": "Measure response time with 0-character match",
-        "labelJa": "先頭文字不一致のケースで応答時間を計測",
-        "status": "success",
-        "payload": {
-          "type": "generic",
-          "data": {
-            "testedPassword": "x_______",
-            "matchedChars": 0,
-            "responseTimeMs": 1.2,
-            "compareMethod": "=== (short-circuit)"
-          }
-        },
-        "timestamp": 1745592000050
-      }
-    ],
-    "summary": "Short-circuit comparison leaks timing. timingSafeEqual eliminates the discrepancy.",
-    "summaryJa": "短絡評価比較はタイミングを漏洩します。timingSafeEqual が差異を排除します。"
-  },
-  "_trace": {
-    "cryptoOps": [
-      {
-        "op": "string.===",
-        "input": "probe=\\\"x_______\\\" vs target=\\\"password123\\\"",
-        "output": "false (stopped at char 0)",
-        "algo": "short-circuit-equal",
-        "detail": "Comparison terminated at first character. Simulated time: 1.2ms"
-      },
-      {
-        "op": "crypto.timingSafeEqual",
-        "input": "probe=\\\"x_______\\\" vs target=\\\"password123\\\"",
-        "output": "false (all bytes compared)",
-        "algo": "timing-safe-equal",
-        "detail": "All bytes compared regardless of match length. Simulated time: 2.1ms"
-      }
-    ],
-    "attackSteps": [ /* AttackStep[] */ ]
-  }
-}
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形
+  // data.blockedBy: "crypto_timing_safe_equal_eliminates_response_time_variance" (堅牢側で発火)
+  // data.extra: シナリオ固有フィールド (probeTimings / vulnerableMaxDelta / safeMaxDelta 等)
 ```
 
 #### _trace 内訳
@@ -932,18 +762,15 @@ const steps: AttackStep[] = [
 
 #### 期待される結果 (AttackResult)
 
-```typescript
-const result: AttackResult = {
-  scenarioId: "password-bruteforce-no-rate-limit",
-  outcome: "succeeded",  // レート制限なし実装では攻撃が成立
-  startedAt: /* Unix ms */,
-  finishedAt: /* Unix ms */,
-  steps,
-  blockedBy: "レート制限 (5 failures/min/IP)",
-  summary: "Without rate limiting, 100-entry dictionary succeeded in 42 attempts. Rate limiting blocked at attempt #5.",
-  summaryJa: "レート制限がない場合、100 件の辞書攻撃が 42 回目で成功しました。レート制限は 5 回目でブロックしました。",
-};
-```
+E-2 契約: 1 リクエストで両モード (脆弱: レート制限なし、堅牢: 5 回/分 + アカウントロックアウト) を並列実行し、5 ステップ完全形を返す。`outcome` は常に `"succeeded"` 固定、HTTP ステータスは 200 固定。`blockedBy` には堅牢側で発火した防御識別子を記録する。
+
+| 項目 | 値 |
+|------|-----|
+| `outcome` | `"succeeded"` (常に) |
+| HTTP ステータス | 200 (常に) |
+| `blockedBy` | `"rate_limit_per_ip_threshold_exceeded_with_account_lockout"` (堅牢側 step 5: IP レート制限 + アカウントロックアウトで攻撃を遮断) |
+| `steps[3].status` (脆弱側 exploit: レート制限なし) | `"success"` (固定辞書から正解パスワードを発見) |
+| `steps[4].status` (堅牢側 verify: 5 failures/min/IP + lockout) | `"blocked"` |
 
 #### 防御策 (defenseRecommendation)
 
@@ -992,138 +819,17 @@ ALTER TABLE users ADD COLUMN locked_until TEXT;  -- ISO 8601
 
 ```
 POST /api/auth/password/attack/bruteforce-no-rate-limit
-```
+Content-Type: application/json
 
-**リクエスト**:
+Request: {} (E-2: 両モードを並列実行するため body は空オブジェクト。
+  辞書ワードリスト・標的ユーザー・レート制限シミュレーションは全てサーバー側のシード値から生成される。
+  zod スキーマ: passwordAttackBruteforceSchema = z.object({}))
 
-```json
-{
-  "username": "seed_alice",
-  "wordlist": [
-    "123456", "password", "12345678", "qwerty", "abc123",
-    "monkey", "1234567", "letmein", "trustno1", "dragon",
-    "password123"
-  ],
-  "rateLimitEnabled": false
-}
-```
-
-| フィールド | 型 | 必須 | 説明 |
-|-----------|---|------|------|
-| `username` | `string` | 必須 | 固定シードユーザー名 |
-| `wordlist` | `string[]` | 必須 | 試行パスワード候補 (最大 20 件。デモ簡略化のため上限あり) |
-| `rateLimitEnabled` | `boolean` | 任意 | `true` の場合、5 回でブロックするシミュレーションを行う (デフォルト `false`) |
-
-**レスポンス (レート制限なし、パスワード一致あり)**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "password-bruteforce-no-rate-limit",
-    "outcome": "succeeded",
-    "startedAt": 1745592000000,
-    "finishedAt": 1745592000450,
-    "steps": [
-      {
-        "id": "step-1",
-        "kind": "probe",
-        "label": "Enumerate target username via login error messages",
-        "labelJa": "ログインエラーメッセージでターゲットのユーザー名を特定",
-        "status": "success",
-        "payload": {
-          "type": "http",
-          "request": { "method": "POST", "url": "/api/auth/password/login", "body": { "username": "seed_alice", "password": "wrong" } },
-          "response": { "status": 401, "body": { "success": false, "error": "Invalid password" } }
-        },
-        "timestamp": 1745592000100
-      },
-      {
-        "id": "step-2",
-        "kind": "probe",
-        "label": "Submit dictionary without rate limiting",
-        "labelJa": "レート制限なしで辞書を投入",
-        "status": "success",
-        "payload": {
-          "type": "generic",
-          "data": {
-            "wordlistSize": 11,
-            "rateLimitEnabled": false,
-            "foundAt": 11,
-            "foundPassword": "password123",
-            "elapsedMs": 320
-          }
-        },
-        "timestamp": 1745592000200
-      },
-      {
-        "id": "step-3",
-        "kind": "exploit",
-        "label": "Authenticate with discovered password",
-        "labelJa": "発見したパスワードで認証成功",
-        "status": "success",
-        "payload": {
-          "type": "http",
-          "request": { "method": "POST", "url": "/api/auth/password/login", "body": { "username": "seed_alice", "password": "password123" } },
-          "response": { "status": 200, "body": { "success": true, "data": { "user": { "id": 1, "username": "seed_alice" } } } }
-        },
-        "timestamp": 1745592000400
-      }
-    ],
-    "summary": "Without rate limiting, dictionary attack found the password at attempt #11.",
-    "summaryJa": "レート制限がない場合、辞書攻撃が 11 回目でパスワードを発見しました。"
-  },
-  "_trace": {
-    "dbQueries": [
-      {
-        "sql": "SELECT id, username, password_hash FROM users WHERE username = ? AND is_attack_sim = 0",
-        "params": ["seed_alice"],
-        "rows": [{ "id": 1, "username": "seed_alice", "password_hash": "$2a$10$..." }],
-        "ms": 1.2
-      }
-    ],
-    "cryptoOps": [
-      {
-        "op": "bcrypt.compare (bulk simulation)",
-        "input": "wordlist_size=11, target_username=seed_alice",
-        "output": "match found at index 10: \\\"password123\\\"",
-        "algo": "bcrypt",
-        "detail": "Server-side simulation of 11 bcrypt.compare() calls. Each call ~100ms at saltRounds=10."
-      }
-    ],
-    "attackSteps": [ /* AttackStep[] */ ]
-  }
-}
-```
-
-**レスポンス (レート制限あり)**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "scenarioId": "password-bruteforce-no-rate-limit",
-    "outcome": "blocked",
-    "blockedBy": "rate_limit_5_per_minute",
-    "steps": [
-      {
-        "id": "step-4",
-        "kind": "blocked",
-        "label": "Rate limiting blocks after 5 attempts",
-        "labelJa": "レート制限が 5 回目でブロック",
-        "status": "blocked",
-        "payload": {
-          "type": "http",
-          "response": { "status": 429, "body": { "error": "Too Many Requests. Try again in 60 seconds." } }
-        },
-        "timestamp": 1745592000500
-      }
-    ],
-    "summary": "Rate limiting blocked the attack after 5 failed attempts.",
-    "summaryJa": "レート制限が 5 回の失敗後に攻撃をブロックしました。"
-  },
-  "_trace": { /* ... */ }
-}
+Response: { data: AttackResult, _trace: ServerTrace }
+  // data.outcome: "succeeded" (常に)
+  // data.steps: 5 ステップ完全形
+  // data.blockedBy: "rate_limit_per_ip_threshold_exceeded_with_account_lockout" (堅牢側で発火)
+  // data.extra: シナリオ固有フィールド (foundAtIndex / foundPassword / vulnerableElapsedMs / blockedAtAttempt 等)
 ```
 
 #### _trace 内訳
@@ -1250,18 +956,20 @@ interface BruteForceScenarioProps {
 
 ### 6.1 ユニットテスト (バックエンドハンドラ単体)
 
-対象ファイル: `server/routes/password-auth.ts` への攻撃サブパス追加分
+E-2 契約に準拠したテスト構成。各シナリオは 1 リクエストで両モード並列実行のため、`outcome === "succeeded"` 固定 + 5 ステップ完全形 + `blockedBy` で防御識別子を検証する。実装は `server/__tests__/password-attack.test.ts` (Phase 2 第一コミット)。
 
-| テスト ID | 検証内容 | 期待結果 |
-|---------|---------|---------|
-| `pw-atk-01` | `POST /attack/rainbow-vs-bcrypt` に `algorithm: "sha1"` を送信 | `outcome: "succeeded"`, step-4 の `status: "blocked"` を含む |
-| `pw-atk-02` | `POST /attack/rainbow-vs-bcrypt` に `algorithm: "bcrypt"` を送信 | `outcome: "blocked"`, 全ステップの `status: "blocked"` |
-| `pw-atk-03` | `POST /attack/timing-string-compare` に先頭0文字一致のプローブを送信 | `cryptoOps` に `string.===` の短絡評価記録が含まれる |
-| `pw-atk-04` | `POST /attack/bruteforce-no-rate-limit` に `rateLimitEnabled: false` で送信 | `outcome: "succeeded"`, `foundAt` が非 null |
-| `pw-atk-05` | `POST /attack/bruteforce-no-rate-limit` に `rateLimitEnabled: true` で送信 | `outcome: "blocked"`, `blockedBy: "rate_limit_5_per_minute"` |
-| `pw-atk-06` | `POST /attack/rainbow-vs-bcrypt` に存在しないユーザー名を送信 | `400 Bad Request`, バリデーションエラー |
-| `pw-atk-07` | `POST /attack/bruteforce-no-rate-limit` に 21 件の wordlist を送信 | `400 Bad Request` (上限 20 件制約) |
-| `pw-atk-08` | 本番環境 (`NODE_ENV=production`) でいずれかの攻撃エンドポイントに送信 | `403 Forbidden` |
+| テストカテゴリ | 対象 | 期待値 |
+|------------|-----|--------|
+| E-2 不変条件 (it.each で 3 シナリオ共通) | `rainbow-vs-bcrypt` / `timing-string-compare` / `bruteforce-no-rate-limit` | `status === 200` / `outcome === "succeeded"` / `steps.length === 5` / `_trace.attackSteps.length === 5` / `_trace.isAttackMode === true` |
+| logId 一意性 | 全 3 シナリオを連続実行 | `attack_log` テーブルに 3 件の独立 logId を確認 |
+| 本番ガード | `NODE_ENV=production` で全 3 ルート | `status === 403` |
+| summaryJa prefix | 全 3 シナリオ | 「この実装は」または「このシナリオでは」で始まる |
+| シナリオ A: blockedBy | `rainbow-vs-bcrypt` | `"bcrypt_salt_and_cost_factor_defeats_rainbow_table_lookup"` |
+| シナリオ A: extra フィールド | `rainbow-vs-bcrypt` | `extra.sha1Hash` / `extra.md5Hash` / `extra.bcryptHashSample` / `extra.rainbowMatch` を含む |
+| シナリオ B: blockedBy | `timing-string-compare` | `"crypto_timing_safe_equal_eliminates_response_time_variance"` |
+| シナリオ B: extra フィールド | `timing-string-compare` | `extra.probeTimings` (脆弱側 matchedChars に応じた応答時間差異) と `extra.safeMaxDelta` (堅牢側ジッタ範囲) を含む |
+| シナリオ C: blockedBy | `bruteforce-no-rate-limit` | `"rate_limit_per_ip_threshold_exceeded_with_account_lockout"` |
+| シナリオ C: extra フィールド | `bruteforce-no-rate-limit` | `extra.foundAtIndex` (脆弱側で発見した辞書インデックス) と `extra.blockedAtAttempt` (堅牢側で遮断された試行回数) を含む |
 
 ### 6.2 E2E テスト (UI フロー)
 
