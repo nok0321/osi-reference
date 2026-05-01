@@ -651,8 +651,9 @@ passkeyRoutes.post("/attack/phishing-origin-binding", (c) =>
       // という origin 不一致が起こり続けることに依存しており、将来 attackerOrigin が
       // expectedOrigin と一致するように変わると教材として破綻する。
       // この派生式により「シード値変更 → flag 自動的に false」が保証される。
+      // 注: as const で narrowed された literal 型同士の比較を TS が定数 false 警告するため string 化
       const fakeOriginNeverMatchesExpected =
-        PASSKEY_DEMO_CONSTANTS.attackerOrigin !== PASSKEY_DEMO_CONSTANTS.expectedOrigin;
+        (PASSKEY_DEMO_CONSTANTS.attackerOrigin as string) !== PASSKEY_DEMO_CONSTANTS.expectedOrigin;
       // 脆弱パス: origin チェック省略 → 不一致でも受理 (fake != expected を観測した時のみ "受理が起きる")
       const vulnerableAccepted = fakeOriginNeverMatchesExpected;
       recordStep({

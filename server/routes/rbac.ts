@@ -270,8 +270,8 @@ rbacRoutes.post("/attack/idor", (c) =>
     async handler({ body, trace, recordStep }) {
       const { victimId, attackerId } = body;
 
-      const victim = SEED_USERS[victimId];
-      const attacker = SEED_USERS[attackerId];
+      const victim = SEED_USERS[victimId as keyof typeof SEED_USERS];
+      const attacker = SEED_USERS[attackerId as keyof typeof SEED_USERS];
 
       // Step 1 (probe): 攻撃者が自分の ID で正常リクエストを発行してエンドポイントを確認
       recordStep({
@@ -458,10 +458,11 @@ rbacRoutes.post("/attack/horizontal-escalation", (c) =>
     tabId: "rbac",
     async handler({ body, trace, recordStep }) {
       const { attackerRole, attackerUserId, victimUserId, action } = body;
-      const attackerUser = SEED_USERS[attackerUserId];
-      const victimUser = SEED_USERS[victimUserId];
+      const attackerUser = SEED_USERS[attackerUserId as keyof typeof SEED_USERS];
+      const victimUser = SEED_USERS[victimUserId as keyof typeof SEED_USERS];
       const permissionKey = `articles:${action}`;
-      const rbacRoleHasPermission = (SEED_ROLE_PERMISSIONS[attackerRole] ?? []).includes(permissionKey);
+      const rolePerms: readonly string[] = SEED_ROLE_PERMISSIONS[attackerRole] ?? [];
+      const rbacRoleHasPermission = rolePerms.includes(permissionKey);
 
       // Step 1 (probe): 攻撃者ロール確認
       recordStep({
@@ -654,7 +655,7 @@ rbacRoutes.post("/attack/vertical-escalation", (c) =>
     async handler({ body, trace, recordStep }) {
       const { attackerRole, targetUserId } = body;
       const attackerUser = SEED_USERS[3]; // attacker_charlie
-      const targetUser = SEED_USERS[targetUserId];
+      const targetUser = SEED_USERS[targetUserId as keyof typeof SEED_USERS];
       const isAdminRole = attackerRole === "admin";
 
       // Step 1 (probe): 攻撃者ロール確認 (viewer)
