@@ -7,11 +7,26 @@ import { apiPost, apiGet } from "../../api/client";
 import type { TlsClientHelloData, TlsServerHelloData, TlsKeyExchangeData, TlsCertificateData, TlsFinishData } from "../../types/auth-responses";
 import DataFlowPanel from "../shared/DataFlowPanel";
 import StepControl from "../shared/StepControl";
+import ViewModeToggle from "../shared/ViewModeToggle";
+import AttackPanel from "../shared/AttackPanel";
+import { getViewMode } from "../../state/attack-state";
+import { tlsScenarios } from "./attacks/scenarios/tls-scenarios";
+import type { AttackResult } from "../../../shared/api-types";
 import "./TlsDeepDive.css";
 
 const SCOPE = "tls-handshake";
 
-export default function TlsDeepDive() {
+// scenarioId → route suffix のマッピング (api/tls/attack/<suffix>)
+// ROB-OIDC-9 同類: scenario meta に routeSuffix を持たせる代わりにコンポーネント内で解決。
+// scenarioId と suffix が揃っているため fallback (s.id.replace) は到達不能だが、
+// 将来 scenario id ミスマッチ時の silent 404 を防ぐため明示マップを優先する。
+const ROUTE_BY_ID: Record<string, string> = {
+  "tls-version-downgrade": "version-downgrade",
+  "tls-self-signed-mitm": "self-signed-mitm",
+  "tls-weak-cipher-negotiation": "weak-cipher",
+};
+
+function TlsDeepDiveDefender() {
   const { t } = useI18n();
   const [expandedStep, setExpandedStep] = createSignal<number | null>(null);
 
@@ -135,6 +150,43 @@ export default function TlsDeepDive() {
 
       {/* Interactive TLS Handshake Demo */}
       <TlsHandshakeDemo />
+    </div>
+  );
+}
+
+export default function TlsDeepDive() {
+  return (
+    <div class="tls-deep-dive-wrapper">
+      <ViewModeToggle tabId="tls-deep" />
+      <Show when={getViewMode("tls-deep") === "defender"}>
+        <TlsDeepDiveDefender />
+      </Show>
+      <Show when={getViewMode("tls-deep") === "attacker"}>
+        <AttackPanel
+          tabId="tls-deep"
+          scenarios={tlsScenarios}
+          onRunScenario={async (s) => {
+            const routeSuffix = ROUTE_BY_ID[s.id] ?? s.id.replace(/^tls-/, "");
+            const res = await apiPost<AttackResult>(
+              `/api/tls/attack/${routeSuffix}`,
+              {},
+              "attack-tls-deep",
+            );
+            if (!res.data) {
+              return {
+                scenarioId: s.id,
+                outcome: "error" as const,
+                startedAt: Date.now(),
+                finishedAt: Date.now(),
+                steps: [],
+                summaryJa: res.error ?? "実行エラー",
+                summary: res.error ?? "Execution error",
+              };
+            }
+            return res.data;
+          }}
+        />
+      </Show>
     </div>
   );
 }

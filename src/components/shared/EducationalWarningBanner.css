@@ -1,0 +1,26 @@
+.edu-warning-banner {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background-color: var(--color-warning, #faad14);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.8rem;
+  min-height: 44px;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.2);
+  border-left: 4px solid rgba(0, 0, 0, 0.25);
+}
+
+.edu-warning-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.edu-warning-text {
+  line-height: 1.4;
+}

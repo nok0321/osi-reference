@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import { traceMiddleware } from "./middleware/trace-logger.js";
+import { ensureAttackEnabled } from "./middleware/attack-guard.js";
 import { getDb, seedDb } from "./db/schema.js";
 import { passwordAuthRoutes } from "./routes/password-auth.js";
 import { jwtOpsRoutes } from "./routes/jwt-ops.js";
@@ -22,6 +23,13 @@ const app = new Hono();
 
 // ── Middleware ──
 app.use("/api/*", cors({ origin: "http://localhost:3000", credentials: true }));
+app.use("/api/*", async (c, next) => {
+  if (c.req.path.includes("/attack/")) {
+    const blocked = ensureAttackEnabled(c);
+    if (blocked) return blocked;
+  }
+  await next();
+});
 app.use("/api/*", traceMiddleware);
 
 // ── Routes ──
@@ -44,24 +52,28 @@ const ALLOWED_TABLES = [
   "users", "sessions", "oauth_clients", "oauth_codes", "oauth_tokens",
   "roles", "user_roles", "permissions", "role_permissions",
   "webauthn_credentials", "api_keys", "kerberos_tickets", "user_mfa",
+  "attack_log",
 ] as const;
 type AllowedTable = (typeof ALLOWED_TABLES)[number];
 
 // Map of safe SELECT queries per table (prevents SQL injection entirely)
+// E-3: is_attack_sim フラグを持つテーブル (sessions, oauth_codes, oauth_tokens, api_keys, kerberos_tickets, refresh_tokens, webauthn_credentials) は
+//      正常系レコード (is_attack_sim=0) のみ表示。攻撃シミュレーションレコードは attack_log テーブルで確認可能。
 const TABLE_QUERIES: Record<AllowedTable, string> = {
   users: "SELECT id, username, created_at FROM users",
-  sessions: "SELECT id, user_id, created_at, expires_at FROM sessions",
+  sessions: "SELECT id, user_id, created_at, expires_at FROM sessions WHERE is_attack_sim = 0",
   oauth_clients: "SELECT * FROM oauth_clients",
-  oauth_codes: "SELECT * FROM oauth_codes",
-  oauth_tokens: "SELECT * FROM oauth_tokens",
+  oauth_codes: "SELECT * FROM oauth_codes WHERE is_attack_sim = 0",
+  oauth_tokens: "SELECT * FROM oauth_tokens WHERE is_attack_sim = 0",
   roles: "SELECT * FROM roles",
   user_roles: "SELECT * FROM user_roles",
   permissions: "SELECT * FROM permissions",
   role_permissions: "SELECT * FROM role_permissions",
-  webauthn_credentials: "SELECT credential_id, user_id, counter, created_at FROM webauthn_credentials",
-  api_keys: "SELECT key_id, key_prefix, name, created_at, last_used FROM api_keys",
-  kerberos_tickets: "SELECT ticket_type, principal, realm, valid_until, created_at FROM kerberos_tickets",
+  webauthn_credentials: "SELECT credential_id, user_id, counter, created_at FROM webauthn_credentials WHERE is_attack_sim = 0",
+  api_keys: "SELECT key_id, key_prefix, name, created_at, last_used FROM api_keys WHERE is_attack_sim = 0",
+  kerberos_tickets: "SELECT ticket_type, principal, realm, valid_until, created_at FROM kerberos_tickets WHERE is_attack_sim = 0",
   user_mfa: "SELECT user_id, verified, created_at, verified_at FROM user_mfa",
+  attack_log: "SELECT id, scenario_id, tab_id, started_at, finished_at, success, blocked_by, user_session_id FROM attack_log ORDER BY started_at DESC",
 };
 
 app.get("/api/debug/tables/:name", (c) => {

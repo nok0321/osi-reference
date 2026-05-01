@@ -5,6 +5,7 @@
 import { Hono } from "hono";
 import { _createTestDb, _setDbForTest, seedDb } from "../db/schema.js";
 import { traceMiddleware } from "../middleware/trace-logger.js";
+import { ensureAttackEnabled } from "../middleware/attack-guard.js";
 import { passwordAuthRoutes } from "../routes/password-auth.js";
 import { jwtOpsRoutes } from "../routes/jwt-ops.js";
 import { sessionAuthRoutes } from "../routes/session-auth.js";
@@ -15,6 +16,9 @@ import { kerberoSimRoutes } from "../routes/kerberos-sim.js";
 import { tlsSimRoutes } from "../routes/tls-sim.js";
 import { ssoApikeyRoutes } from "../routes/sso-apikey.js";
 import { mfaTotpRoutes } from "../routes/mfa-totp.js";
+import { webauthnRoutes } from "../routes/webauthn.js";
+import { passkeyRoutes } from "../routes/passkey.js";
+import { oidcSamlSimRoutes } from "../routes/oidc-saml-sim.js";
 
 /** Create a fresh Hono app backed by an in-memory SQLite DB. */
 export function createTestApp() {
@@ -23,6 +27,13 @@ export function createTestApp() {
   seedDb();
 
   const app = new Hono();
+  app.use("/api/*", async (c, next) => {
+    if (c.req.path.includes("/attack/")) {
+      const blocked = ensureAttackEnabled(c);
+      if (blocked) return blocked;
+    }
+    await next();
+  });
   app.use("/api/*", traceMiddleware);
   app.route("/api/auth/password", passwordAuthRoutes);
   app.route("/api/jwt", jwtOpsRoutes);
@@ -34,6 +45,9 @@ export function createTestApp() {
   app.route("/api/tls", tlsSimRoutes);
   app.route("/api/sso", ssoApikeyRoutes);
   app.route("/api/mfa", mfaTotpRoutes);
+  app.route("/api/webauthn", webauthnRoutes);
+  app.route("/api/passkey", passkeyRoutes);
+  app.route("/api/oidc", oidcSamlSimRoutes);
 
   return { app, db };
 }

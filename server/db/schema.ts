@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -14,6 +15,7 @@ export function getDb(): Database.Database {
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
     initSchema(db);
+    migrateSchema(db);
   }
   return db;
 }
@@ -28,7 +30,28 @@ export function _createTestDb(): Database.Database {
   const memDb = new Database(":memory:");
   memDb.pragma("foreign_keys = ON");
   initSchema(memDb);
+  migrateSchema(memDb);
   return memDb;
+}
+
+/**
+ * Phase 2 (E-3): is_attack_sim 列を 5 テーブルに追加するマイグレーション。
+ * ROB-FIND-001 対応: CREATE TABLE IF NOT EXISTS は既存テーブルを変更しないため、
+ * Phase 2 以前の data.sqlite を持つ環境では明示的な ALTER TABLE が必須。
+ * 本関数は idempotent (既に列が存在すれば何もしない)。
+ */
+function migrateSchema(db: Database.Database) {
+  // SEC FINDING-6: refresh_tokens を追加。Phase 2 後続の session-token / oauth 攻撃が
+  // refresh_tokens テーブルを更新する場合の正常系除外フィルタに必須。
+  // Phase 2 第六コミット (fido2): webauthn_credentials を追加。challenge-replay シナリオで
+  // 攻撃シミュレーション用クレデンシャルを INSERT するため、正常系の SELECT 結果から除外する必要がある。
+  const tablesNeedingFlag = ["sessions", "oauth_codes", "oauth_tokens", "api_keys", "kerberos_tickets", "refresh_tokens", "webauthn_credentials"] as const;
+  for (const tbl of tablesNeedingFlag) {
+    const cols = db.prepare(`PRAGMA table_info(${tbl})`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === "is_attack_sim")) {
+      db.exec(`ALTER TABLE ${tbl} ADD COLUMN is_attack_sim INTEGER NOT NULL DEFAULT 0`);
+    }
+  }
 }
 
 function initSchema(db: Database.Database) {
@@ -46,6 +69,7 @@ function initSchema(db: Database.Database) {
       data TEXT DEFAULT '{}',
       created_at TEXT DEFAULT (datetime('now')),
       expires_at TEXT NOT NULL,
+      is_attack_sim INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
 
@@ -63,7 +87,8 @@ function initSchema(db: Database.Database) {
       scope TEXT,
       redirect_uri TEXT,
       expires_at TEXT NOT NULL,
-      used INTEGER DEFAULT 0
+      used INTEGER DEFAULT 0,
+      is_attack_sim INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS oauth_tokens (
@@ -72,7 +97,8 @@ function initSchema(db: Database.Database) {
       client_id TEXT NOT NULL,
       user_id INTEGER NOT NULL,
       scope TEXT,
-      expires_at TEXT NOT NULL
+      expires_at TEXT NOT NULL,
+      is_attack_sim INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS roles (
@@ -111,6 +137,7 @@ function initSchema(db: Database.Database) {
       counter INTEGER DEFAULT 0,
       transports TEXT,
       created_at TEXT DEFAULT (datetime('now')),
+      is_attack_sim INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
 
@@ -121,7 +148,8 @@ function initSchema(db: Database.Database) {
       user_id INTEGER,
       name TEXT,
       created_at TEXT DEFAULT (datetime('now')),
-      last_used TEXT
+      last_used TEXT,
+      is_attack_sim INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS kerberos_tickets (
@@ -132,7 +160,8 @@ function initSchema(db: Database.Database) {
       encrypted_data TEXT NOT NULL,
       session_key TEXT NOT NULL,
       valid_until TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now'))
+      created_at TEXT DEFAULT (datetime('now')),
+      is_attack_sim INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS user_mfa (
@@ -150,7 +179,33 @@ function initSchema(db: Database.Database) {
       expires_at TEXT NOT NULL,
       revoked INTEGER NOT NULL DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
+      is_attack_sim INTEGER NOT NULL DEFAULT 0,
       FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS attack_log (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      scenario_id      TEXT    NOT NULL,
+      tab_id           TEXT    NOT NULL,
+      started_at       INTEGER NOT NULL,
+      finished_at      INTEGER,
+      success          INTEGER NOT NULL DEFAULT 0,
+      blocked_by       TEXT,
+      steps_json       TEXT,
+      payload_json     TEXT,
+      user_session_id  TEXT
+    );
+
+    -- Phase 2 第十コミット (password): rainbow テーブル攻撃の概念実証用固定辞書。
+    -- DESIGN/10 §3.2 / §4.1.7 準拠。教育専用テーブルのため is_attack_sim 列は不要 (全行が攻撃シミュ用)。
+    -- 10 件の弱パスワードに対する SHA-1 / MD5 ハッシュを事前計算済みとして保持する。
+    -- 実環境のレインボーテーブルは数百 GB だが、本デモは固定辞書 10 件で「ソルトなし高速ハッシュは
+    -- 逆引き可能」「bcrypt はソルト + 計算コストで逆引き不能」の対比を示す。
+    CREATE TABLE IF NOT EXISTS rainbow_table_sim (
+      hash       TEXT NOT NULL,
+      plaintext  TEXT NOT NULL,
+      algo       TEXT NOT NULL,
+      PRIMARY KEY (hash, algo)
     );
 
     -- Indexes for frequently queried columns
@@ -169,6 +224,10 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_user_mfa_user_id ON user_mfa(user_id);
     CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
     CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_attack_log_scenario ON attack_log(scenario_id);
+    CREATE INDEX IF NOT EXISTS idx_attack_log_tab ON attack_log(tab_id);
+    CREATE INDEX IF NOT EXISTS idx_attack_log_started_at ON attack_log(started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_rainbow_table_sim_hash ON rainbow_table_sim(hash);
   `);
 }
 
@@ -177,6 +236,7 @@ export function seedDb() {
 
   // Clear all tables
   d.exec(`
+    DELETE FROM attack_log;
     DELETE FROM kerberos_tickets;
     DELETE FROM api_keys;
     DELETE FROM webauthn_credentials;
@@ -191,7 +251,24 @@ export function seedDb() {
     DELETE FROM oauth_clients;
     DELETE FROM sessions;
     DELETE FROM users;
+    DELETE FROM rainbow_table_sim;
   `);
+
+  // Phase 2 第十コミット (password): rainbow_table_sim 教育用固定辞書 (DESIGN/10 §3.2)。
+  // 10 件の弱パスワードを SHA-1 / MD5 で事前計算済みハッシュとして保持する。
+  // 実 SHA-1/MD5 ハッシュ値を crypto モジュールで動的計算 — 文字列ハードコードによる
+  // ハッシュ写し間違いリスクを排除 (R-MEDIUM-1 と同パターンの SSoT 派生原則)。
+  const rainbowSeedPasswords = [
+    "password123", "hunter2", "letmein", "qwerty", "iloveyou",
+    "welcome1", "monkey", "trustno1", "dragon", "sunshine",
+  ] as const;
+  const insertRainbow = d.prepare(
+    `INSERT INTO rainbow_table_sim (hash, plaintext, algo) VALUES (?, ?, ?)`,
+  );
+  for (const pw of rainbowSeedPasswords) {
+    insertRainbow.run(crypto.createHash("sha1").update(pw).digest("hex"), pw, "sha1");
+    insertRainbow.run(crypto.createHash("md5").update(pw).digest("hex"), pw, "md5");
+  }
 
   // Seed OAuth client
   d.prepare(
@@ -261,6 +338,25 @@ export function seedDb() {
   );
   insertUser.run("oidc-user", demoPassword);
   insertUser.run("saml-user", demoPassword);
+
+  // Seed attack demo users (固定シードデータ、DESIGN/04 §5.1 SEC-2 対応)
+  const seedPwd = (pwd: string) => bcrypt.hashSync(pwd, 10);
+  const insertSeedUser = d.prepare(`INSERT INTO users (username, password_hash) VALUES (?, ?)`);
+  insertSeedUser.run("seed_alice", seedPwd("Passw0rd!"));
+  insertSeedUser.run("seed_bob", seedPwd("hunter2"));
+  insertSeedUser.run("seed_admin", seedPwd("admin123"));
+  insertSeedUser.run("attacker_charlie", seedPwd("charlie123"));
+
+  // ロール紐付け
+  const aliceId = (d.prepare("SELECT id FROM users WHERE username = ?").get("seed_alice") as { id: number }).id;
+  const bobId = (d.prepare("SELECT id FROM users WHERE username = ?").get("seed_bob") as { id: number }).id;
+  const adminId = (d.prepare("SELECT id FROM users WHERE username = ?").get("seed_admin") as { id: number }).id;
+  const charlieId = (d.prepare("SELECT id FROM users WHERE username = ?").get("attacker_charlie") as { id: number }).id;
+  const insertUR = d.prepare(`INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)`);
+  insertUR.run(aliceId, roleViewer.id);
+  insertUR.run(bobId, roleEditor.id);
+  insertUR.run(adminId, roleAdmin.id);
+  insertUR.run(charlieId, roleViewer.id);
 
   return { message: "Database seeded successfully" };
 }

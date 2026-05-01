@@ -7,9 +7,23 @@ import type { ProtocolFlowStep, ProtocolActor } from "../../types/security";
 import { apiPost, apiGet } from "../../api/client";
 import DataFlowPanel from "../shared/DataFlowPanel";
 import StepControl from "../shared/StepControl";
+import ViewModeToggle from "../shared/ViewModeToggle";
+import AttackPanel from "../shared/AttackPanel";
+import { getViewMode } from "../../state/attack-state";
+import { mfaScenarios } from "./attacks/scenarios/mfa-scenarios";
+import type { AttackResult } from "../../../shared/api-types";
 import "./MfaFlow.css";
 
 const SCOPE = "mfa-totp";
+
+// scenarioId → route suffix のマッピング (api/mfa/attack/<suffix>)
+// AuthMethods.tsx の ROUTE_BY_ID と同パターン。fallback (s.id.replace) は到達不能だが、
+// scenario id ミスマッチ時の silent 404 を防ぐため明示マップを優先する。
+const ROUTE_BY_ID: Record<string, string> = {
+  "mfa-otp-replay": "otp-replay",
+  "mfa-time-window-too-wide": "time-window-wide",
+  "mfa-sms-swap": "sms-swap",
+};
 
 function MfaDemo() {
   const { t } = useI18n();
@@ -307,7 +321,7 @@ function MfaDemo() {
   );
 }
 
-export default function MfaFlow() {
+function MfaFlowDefender() {
   const { t } = useI18n();
   const [ceremony, setCeremony] = createSignal<"enroll" | "login">("enroll");
   const [enrollStep, setEnrollStep] = createSignal(0);
@@ -442,6 +456,43 @@ export default function MfaFlow() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+export default function MfaFlow() {
+  return (
+    <div class="mfa-wrapper">
+      <ViewModeToggle tabId="mfa" />
+      <Show when={getViewMode("mfa") === "defender"}>
+        <MfaFlowDefender />
+      </Show>
+      <Show when={getViewMode("mfa") === "attacker"}>
+        <AttackPanel
+          tabId="mfa"
+          scenarios={mfaScenarios}
+          onRunScenario={async (s) => {
+            const routeSuffix = ROUTE_BY_ID[s.id] ?? s.id.replace(/^mfa-/, "");
+            const res = await apiPost<AttackResult>(
+              `/api/mfa/attack/${routeSuffix}`,
+              {},
+              "attack-mfa",
+            );
+            if (!res.data) {
+              return {
+                scenarioId: s.id,
+                outcome: "error" as const,
+                startedAt: Date.now(),
+                finishedAt: Date.now(),
+                steps: [],
+                summaryJa: res.error ?? "実行エラー",
+                summary: res.error ?? "Execution error",
+              };
+            }
+            return res.data;
+          }}
+        />
+      </Show>
     </div>
   );
 }

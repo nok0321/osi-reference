@@ -51,6 +51,13 @@
   --color-info-strong: rgba(22, 119, 255, 0.4);
   --color-accent-purple: #a855f7;
   --color-accent-purple-dim: rgba(168, 85, 247, 0.15);
+
+  /* Attack Demo Catalog */
+  --color-attack-bg: rgba(255, 140, 0, 0.08);
+  --color-attack-accent: #ff8c00;
+  --color-attack-accent-dim: rgba(255, 140, 0, 0.2);
+  --color-attack-accent-border: rgba(255, 140, 0, 0.35);
+  --color-defense-accent: #52c41a;
 }
 
 /* === Light Theme Override === */
@@ -68,6 +75,10 @@
   --glow-color-dim: rgba(0, 119, 182, 0.12);
   --trace-color: #8b6914;
   --trace-color-dim: rgba(139, 105, 20, 0.15);
+  --color-attack-bg: rgba(180, 80, 0, 0.06);
+  --color-attack-accent: #b45200;
+  --color-attack-accent-dim: rgba(180, 82, 0, 0.15);
+  --color-attack-accent-border: rgba(180, 82, 0, 0.3);
 }
 
 [data-theme="light"] body::before {

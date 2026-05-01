@@ -5,6 +5,11 @@ import type { AuthMethodComparison } from "../../types/security";
 import { apiPost, apiGet, apiDelete, apiFetch } from "../../api/client";
 import type { SessionLoginData, TokenLoginData, SessionProfileData, TokenProfileData, SessionLogoutData } from "../../types/auth-responses";
 import DataFlowPanel from "../shared/DataFlowPanel";
+import ViewModeToggle from "../shared/ViewModeToggle";
+import AttackPanel from "../shared/AttackPanel";
+import { getViewMode } from "../../state/attack-state";
+import { sessionTokenScenarios } from "./attacks/scenarios/session-token-scenarios";
+import type { AttackResult } from "../../../shared/api-types";
 import "./AuthComparison.css";
 
 const SCOPE_SESSION = "session-auth";
@@ -262,7 +267,7 @@ function LiveComparisonDemo() {
   );
 }
 
-export default function AuthComparison() {
+function AuthComparisonDefender() {
   const { t } = useI18n();
   const [expandedRow, setExpandedRow] = createSignal<number | null>(null);
 
@@ -352,6 +357,60 @@ export default function AuthComparison() {
 
       {/* Live comparison demo */}
       <LiveComparisonDemo />
+    </div>
+  );
+}
+
+const ROUTE_BY_ID: Record<string, { area: "session" | "token"; suffix: string }> = {
+  "session-fixation": { area: "session", suffix: "fixation" },
+  "session-xss-cookie-theft": { area: "session", suffix: "xss-cookie-theft" },
+  "token-replay": { area: "token", suffix: "replay" },
+};
+
+export default function AuthComparison() {
+  return (
+    <div class="auth-comparison-wrapper">
+      <ViewModeToggle tabId="session-vs-token" />
+      <Show when={getViewMode("session-vs-token") === "defender"}>
+        <AuthComparisonDefender />
+      </Show>
+      <Show when={getViewMode("session-vs-token") === "attacker"}>
+        <AttackPanel
+          tabId="session-vs-token"
+          scenarios={sessionTokenScenarios}
+          onRunScenario={async (s) => {
+            const route = ROUTE_BY_ID[s.id];
+            if (!route) {
+              return {
+                scenarioId: s.id,
+                outcome: "error" as const,
+                startedAt: Date.now(),
+                finishedAt: Date.now(),
+                steps: [],
+                summaryJa: "未対応のシナリオ ID です",
+                summary: "Unsupported scenario ID",
+              };
+            }
+            const res = await apiPost<AttackResult>(
+              `/api/${route.area}/attack/${route.suffix}`,
+              {},
+              "attack-session-vs-token",
+            );
+            if (!res.data) {
+              return {
+                scenarioId: s.id,
+                outcome: "error" as const,
+                startedAt: Date.now(),
+                finishedAt: Date.now(),
+                steps: [],
+                summaryJa: res.error ?? "実行エラー",
+                summary: res.error ?? "Execution error",
+              };
+            }
+            return res.data;
+          }}
+        />
+      </Show>
     </div>
   );
 }

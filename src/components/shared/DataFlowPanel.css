@@ -294,6 +294,31 @@
   padding: 20px;
 }
 
+/* ── Attack trace steps ── */
+.attack-trace-step[data-status="blocked"] {
+  border-color: var(--color-success-border);
+}
+.attack-trace-step[data-status="success"] {
+  border-color: var(--color-attack-accent-border, rgba(255,140,0,0.35));
+}
+
+.attack-trace-status[data-status="blocked"] {
+  background: var(--color-success-dim);
+  color: var(--color-success);
+}
+.attack-trace-status[data-status="success"] {
+  background: var(--color-attack-bg, rgba(255,140,0,0.08));
+  color: var(--color-attack-accent, #ff8c00);
+}
+.attack-trace-status[data-status="running"] {
+  background: rgba(0, 212, 255, 0.15);
+  color: var(--glow-color);
+}
+.attack-trace-status[data-status="failed"] {
+  background: var(--color-danger-dim);
+  color: var(--color-danger);
+}
+
 /* ── Session ops ── */
 .session-op {
   border: 1px solid var(--border-subtle);
