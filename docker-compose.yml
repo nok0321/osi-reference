@@ -1,0 +1,75 @@
+# 教育用 live attack 環境の docker-compose 定義
+# 関連設計書: DESIGN/30 §2.2-2.3, DESIGN/32 §6, DESIGN/34 §4
+#
+# Phase 1 で起動: victim-web, attacker-shell
+# Phase 4 で追加予定: victim-tls-proxy, victim-saml-idp
+#
+# orchestrator (host:3001) は本ファイルでは管理せず、host で `npm run dev:server` する想定。
+# Phase 1-2 の Windows 開発体験のため、orchestrator は docker compose 経由では起動しない。
+
+services:
+  victim-web:
+    build:
+      context: .
+      dockerfile: services/victim-web/Dockerfile
+    networks:
+      - victim-net
+    # Phase 1 注記: orchestrator が host (port 3001) で動作するため、loopback (127.0.0.1) にのみ
+    # victim-web を露出する。外部 NIC には公開しない。Phase 3+ で orchestrator も docker 化された
+    # 際は本 ports セクションを削除し、`internal: true` の victim-net 内部通信のみで完結させる。
+    # DESIGN/32 §6.1 "ports: []" の最終形は Phase 3+ で達成。
+    ports:
+      - "127.0.0.1:4001:4001"
+    environment:
+      NODE_ENV: development
+      # docker 内では PORT 衝突がないが、宣言を明示する
+      VICTIM_PORT: "4001"
+    volumes:
+      - type: tmpfs
+        target: /app/data
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    mem_limit: 256m
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:4001/health"]
+      interval: 10s
+      timeout: 2s
+      retries: 3
+
+  attacker-shell:
+    build:
+      context: .
+      dockerfile: services/attacker-shell/Dockerfile
+    networks:
+      - victim-net
+    # ports: 公開しない
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    mem_limit: 64m
+    pids_limit: 64
+    command: ["sleep", "infinity"]
+
+networks:
+  victim-net:
+    driver: bridge
+    # ─────────────────────────────────────────────────────────────────────
+    # Phase 1-2 トレードオフ: `internal: true` を有効化すると Docker は
+    # host からの port publishing も無効化する仕様 (compose ドキュメント明記)。
+    # 本 Phase では orchestrator が host (port 3001) で動作しており host loopback で
+    # victim-web に到達する必要があるため、暫定的に `internal` を無効化する。
+    # ただし DESIGN/34 §4 の「OS レイヤ egress 遮断」は弱まるため、Phase 3+ で
+    # orchestrator も compose 内のサービス化したタイミングで `internal: true` を復活させる。
+    # その時点でこの `ports` 公開も削除し DESIGN/32 §6.1 の `ports: []` に戻す。
+    # internal: true   # ← Phase 3+ で復活
+    # ─────────────────────────────────────────────────────────────────────

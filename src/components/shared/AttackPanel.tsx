@@ -1,6 +1,11 @@
 import { createSignal, createEffect, Show, For } from "solid-js";
 import { useI18n } from "../../i18n/context";
-import type { AttackScenarioMeta, AttackResult } from "../../../shared/api-types";
+import type {
+  AttackScenarioMeta,
+  AttackResult,
+  OrchestratorExecRequest,
+  VictimTarget,
+} from "../../../shared/api-types";
 import type { AuthSubView } from "../../types/security";
 import EducationalWarningBanner from "./EducationalWarningBanner";
 import AttackScenarioSelector from "./AttackScenarioSelector";
@@ -8,6 +13,7 @@ import AttackStepTimeline from "./AttackStepTimeline";
 import AttackResultBanner from "./AttackResultBanner";
 import AttackDefensePanel from "./AttackDefensePanel";
 import DataFlowPanel from "./DataFlowPanel";
+import RawHttpComposer from "./RawHttpComposer";
 import "./AttackPanel.css";
 
 interface AttackPanelProps {
@@ -18,6 +24,16 @@ interface AttackPanelProps {
    * 排他選択モードは廃止されたため、modeBody 引数は不要。
    */
   onRunScenario: (scenario: AttackScenarioMeta) => Promise<AttackResult>;
+  /**
+   * mode: "live" シナリオで RawHttpComposer の SEND 押下時に呼ばれる。
+   * 未指定時は live シナリオを narration にフォールバックさせる (PR-1 後方互換)。
+   */
+  onRunLiveScenario?: (
+    scenario: AttackScenarioMeta,
+    payload: { target: VictimTarget; request: OrchestratorExecRequest["request"] },
+  ) => Promise<AttackResult>;
+  /** Phase 1 では victim-web のみ。Phase 4+ で複数 target を表示する。 */
+  allowedTargets?: VictimTarget[];
 }
 
 function AttackPanel(props: AttackPanelProps) {
@@ -29,9 +45,14 @@ function AttackPanel(props: AttackPanelProps) {
   const [attackResult, setAttackResult] = createSignal<AttackResult | null>(null);
   const [running, setRunning] = createSignal(false);
   const [defenseOpen, setDefenseOpen] = createSignal(false);
+  const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
 
   const selectedScenario = () =>
     props.scenarios.find((s) => s.id === selectedId()) ?? props.scenarios[0] ?? null;
+
+  const isLiveMode = () => selectedScenario()?.mode === "live";
+  const allowedTargets = (): VictimTarget[] =>
+    props.allowedTargets ?? ["victim-web"];
 
   /* scenarios が変化したとき selectedId が無効/空なら最初のシナリオに同期 */
   createEffect(() => {
@@ -50,15 +71,44 @@ function AttackPanel(props: AttackPanelProps) {
     }
   });
 
+  /* シナリオ切替時に直前の結果・エラーをクリア */
+  createEffect(() => {
+    selectedId();
+    setAttackResult(null);
+    setErrorMessage(null);
+  });
+
   async function handleRunAttack() {
     const scenario = selectedScenario();
     if (!scenario || running()) return;
     setRunning(true);
     setAttackResult(null);
     setDefenseOpen(false);
+    setErrorMessage(null);
     try {
       const result = await props.onRunScenario(scenario);
       setAttackResult(result);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function handleSendLive(payload: {
+    target: VictimTarget;
+    request: OrchestratorExecRequest["request"];
+  }) {
+    const scenario = selectedScenario();
+    if (!scenario || running() || !props.onRunLiveScenario) return;
+    setRunning(true);
+    setAttackResult(null);
+    setDefenseOpen(false);
+    setErrorMessage(null);
+    try {
+      const result = await props.onRunLiveScenario(scenario, payload);
+      setAttackResult(result);
+      if (result.outcome === "error") {
+        setErrorMessage(result.summaryJa ?? result.summary ?? t("実行エラー", "Execution error"));
+      }
     } finally {
       setRunning(false);
     }
@@ -97,17 +147,42 @@ function AttackPanel(props: AttackPanelProps) {
           </div>
         </Show>
 
-        {/* 4. 実行ボタン */}
-        <button
-          class="attack-run-button"
-          disabled={running() || props.scenarios.length === 0}
-          aria-busy={running()}
-          onClick={handleRunAttack}
-        >
-          <Show when={running()} fallback={t("攻撃を実行", "Run Attack")}>
-            {t("実行中...", "Running...")}
-          </Show>
-        </button>
+        {/* 4a. live モード: RawHttpComposer */}
+        <Show when={isLiveMode() && selectedScenario()?.liveTemplate && props.onRunLiveScenario}>
+          <RawHttpComposer
+            scenarioId={selectedScenario()!.id}
+            allowedTargets={allowedTargets()}
+            template={{
+              target: selectedScenario()!.liveTemplate!.target,
+              method: selectedScenario()!.liveTemplate!.method,
+              path: selectedScenario()!.liveTemplate!.path,
+              headers: selectedScenario()!.liveTemplate!.headers ?? {},
+              body: selectedScenario()!.liveTemplate!.body ?? "",
+            }}
+            sending={running()}
+            onSend={handleSendLive}
+          />
+        </Show>
+
+        {/* 4b. narration モード: 既存実行ボタン */}
+        <Show when={!isLiveMode()}>
+          <button
+            class="attack-run-button"
+            disabled={running() || props.scenarios.length === 0}
+            aria-busy={running()}
+            onClick={handleRunAttack}
+          >
+            <Show when={running()} fallback={t("攻撃を実行", "Run Attack")}>
+              {t("実行中...", "Running...")}
+            </Show>
+          </button>
+        </Show>
+
+        <Show when={errorMessage() !== null}>
+          <div class="attack-error-toast" role="alert" aria-live="assertive">
+            {errorMessage()}
+          </div>
+        </Show>
 
         <div class="attack-panel-body">
           {/* 5. タイムライン */}

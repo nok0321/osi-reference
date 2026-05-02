@@ -28,6 +28,10 @@ export interface ServerTrace {
   attackSteps?: AttackStep[];
   /** 攻撃デモエンドポイント (/attack/) から発生したトレースの場合 true。middleware が自動セット。 */
   isAttackMode?: boolean;
+  /** "live" = victim コンテナとの実通信 / "narration" = orchestrator 内部シム (DESIGN/31 §4.2) */
+  mode?: "live" | "narration";
+  /** mode: "live" のときに付与。victim 内部の DB/暗号操作が orchestrator から観測不能であることを明示。 */
+  victimNote?: string;
 }
 
 export interface ApiResponse<T = unknown> {
@@ -476,6 +480,120 @@ export interface AttackScenarioMeta {
     /** "vulnerable"=脆弱モード (赤系) / "defensive"=堅牢モード (緑系)。UI スタイルに使用。 */
     kind: "vulnerable" | "defensive";
   }[];
+
+  /**
+   * "live"     : Docker victim コンテナと実通信 → POST /api/orchestrator/exec
+   * "narration": orchestrator 内部シム → POST /api/<area>/attack/<scenario-id>
+   * 未指定時は "narration" として扱う (Phase 1 移行期間の後方互換)。
+   */
+  mode?: "live" | "narration";
+
+  /**
+   * mode: "live" シナリオで RawHttpComposer の初期値として使うテンプレート。
+   * 学習者は target の dropdown と headers/body を編集してから送信する。
+   */
+  liveTemplate?: {
+    target: VictimTarget;
+    method: HttpMethod;
+    path: string;
+    headers?: Record<string, string>;
+    body?: string;
+  };
+}
+
+/* ── Live Attack: Orchestrator API (DESIGN/31) ── */
+
+/**
+ * VICTIM_ALLOWLIST のキー文字列リテラル union。
+ * ブラウザは `target` フィールドにこのキーのみ送信できる (URL 偽造防止)。
+ * orchestrator が allowlist から baseUrl を解決する。
+ */
+export type VictimTarget =
+  | "victim-web"
+  | "attacker-shell"
+  | "victim-tls-proxy"
+  | "victim-saml-idp";
+
+/**
+ * VICTIM_ALLOWLIST の値エントリ。
+ * baseUrl の上書きは禁止 (環境変数も含む)。Phase ガードに利用される `phaseAvailable` を持つ。
+ */
+export interface VictimEntry {
+  /**
+   * 転送先 URL。`http://` または `https://` で始まる完全 URL。
+   * `exec://<container-name>` で始まる場合は docker exec 経由のコマンド実行を示す (Phase 2+ の attacker-shell 用)。
+   */
+  baseUrl: string;
+  /** この victim が接続する Docker ネットワーク名。 */
+  network: "victim-net";
+  /** この victim が利用可能になる最初の Phase 番号。 */
+  phaseAvailable: 1 | 2 | 3 | 4 | 5;
+}
+
+export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "HEAD" | "OPTIONS";
+
+/** 学習者が RawHttpComposer で組み立てたリクエストのフロント送信フォーマット。 */
+export interface OrchestratorExecRequest {
+  /** AttackScenarioMeta.id と一致させる。例: "jwt-alg-none" */
+  scenarioId: string;
+  /** VICTIM_ALLOWLIST のキー文字列。baseUrl は orchestrator が allowlist から取得する。 */
+  target: VictimTarget;
+  request: {
+    method: HttpMethod;
+    /** pathname + query string。"/" で始まる必要がある。 */
+    path: string;
+    headers: Record<string, string>;
+    body?: string | null;
+  };
+  /** victim コンテナへの接続タイムアウト (ms)。100–10000、デフォルト 3000。 */
+  timeoutMs?: number;
+}
+
+export interface RawHttpRequest {
+  /** "POST /jwt/verify HTTP/1.1" 形式のリクエスト行 */
+  line: string;
+  headers: Record<string, string>;
+  body: string | null;
+  /** 送信した総バイト数 (ヘッダ + ボディ) */
+  bytesSent: number;
+}
+
+export interface RawHttpResponse {
+  /** "HTTP/1.1 200 OK" 形式のステータス行 */
+  line: string;
+  status: number;
+  headers: Record<string, string>;
+  body: string | null;
+  /** 受信した総バイト数 (ヘッダ + ボディ) */
+  bytesReceived: number;
+}
+
+/**
+ * 双方向 raw HTTP キャプチャ。browser⇄orchestrator + orchestrator⇄victim の両ペア。
+ * メモリ上のみ保持し、attack_log には summary のみを書き込む (DESIGN/31 §6.4)。
+ */
+export interface RawExchange {
+  browserToOrchestrator: {
+    request: RawHttpRequest;
+    response: RawHttpResponse;
+  };
+  orchestratorToVictim: {
+    request: RawHttpRequest;
+    response: RawHttpResponse;
+    /** VICTIM_ALLOWLIST から解決された baseUrl */
+    targetResolvedTo: string;
+  };
+  /** browser → orchestrator → victim → orchestrator → browser の総経過 (ms) */
+  elapsedMs: number;
+}
+
+/**
+ * POST /api/orchestrator/exec の成功レスポンス型。
+ * AttackResult に live モード固有フィールドを追加する。
+ */
+export interface OrchestratorExecResponse extends AttackResult {
+  rawExchange: RawExchange;
+  mode: "live";
 }
 
 /** attack_log テーブルの行型。 */

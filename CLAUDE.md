@@ -31,59 +31,105 @@ OSI参照モデルのインタラクティブ学習ツール。認証・認可�
 - D3 が管理する SVG 内部に Solid は介入しない
 
 ## ディレクトリ構造
+
+### 現状 (becc5fc 時点)
+
 ```
-server/                           # Hono バックエンド (port 3001)
-├── index.ts                      # エントリポイント、全ルート登録
-├── db/schema.ts                  # SQLite スキーマ (12テーブル) + seed
-├── middleware/trace-logger.ts    # _trace ミドルウェア (DB/暗号/セッション操作を記録)
-└── routes/
-    ├── password-auth.ts          # 登録/ログイン (bcrypt)
-    ├── jwt-ops.ts                # JWT 署名/検証/デコード (HS256/RS256)
-    ├── session-auth.ts           # セッション認証 (Cookie + DB)
-    ├── token-auth.ts             # トークン認証 (JWT Bearer)
-    ├── oauth-sim.ts              # OAuth 2.0 認可サーバーシミュレーション
-    ├── rbac.ts                   # RBAC/ABAC/ACL アクセス制御評価
-    ├── webauthn.ts               # FIDO2 登録/認証 (@simplewebauthn/server)
-    ├── kerberos-sim.ts           # Kerberos KDC シミュレーション (AES暗号化チケット)
-    ├── oidc-saml-sim.ts          # OIDC (PKCE) + SAML IdP シミュレーション
-    ├── sso-apikey.ts             # SSO セッション伝播 + API キー生成/HMAC
-    └── tls-sim.ts                # TLS 1.3 ハンドシェイク (ECDHE鍵交換)
-shared/
-└── api-types.ts                  # サーバー/クライアント共有型 (ServerTrace等)
-src/
-├── api/client.ts                 # fetch ラッパー (リクエスト/レスポンス自動キャプチャ)
-├── i18n/context.tsx              # 言語切替 Signal + Provider
-├── types/{index,security}.ts     # 型定義
-├── data/*.ts                     # 静的データ (layers, protocols, scenarios, auth, security)
-├── state/{app,security}-state.ts # グローバル Signal
-├── utils/{colors,animation,security-colors}.ts
-└── components/
-    ├── shared/
-    │   ├── DataFlowPanel.tsx      # HTTP/Trace/DB タブ付き折りたたみパネル
-    │   └── (TabBar, StepControl, etc.)
-    ├── overview/       # View 1: 7層ダイアグラム
-    ├── encapsulation/  # View 2: ヘッダ追加/除去アニメーション
-    ├── scenario/       # View 3: HTTP/DNS/TLS パケットフロー
-    ├── comparison/     # View 4: OSI⇔TCP/IP マッピング
-    ├── auth/           # View 5: 全10方式にインタラクティブデモ追加済み
-    └── security/       # View 6: パケットモニター/証明書/FW/攻撃マップ
+osi-reference/
+├── server/                          # Hono バックエンド (port 3001) — Phase 1 で orchestrator 役に進化
+│   ├── index.ts                     # エントリポイント、全ルート登録
+│   ├── db/schema.ts                 # SQLite スキーマ + seed
+│   ├── middleware/trace-logger.ts   # _trace ミドルウェア (DB/暗号/セッション操作を記録)
+│   └── routes/
+│       ├── password-auth.ts         # 登録/ログイン (bcrypt) + 攻撃ルート /attack/*
+│       ├── jwt-ops.ts               # JWT 署名/検証 + 攻撃ルート /attack/* (Phase 1 で live 版を orchestrator/exec 経由に)
+│       ├── session-auth.ts          # セッション認証 (Cookie + DB) + /attack/*
+│       ├── token-auth.ts            # トークン認証 (JWT Bearer) + /attack/*
+│       ├── oauth-sim.ts             # OAuth 2.0 + /attack/*
+│       ├── rbac.ts                  # RBAC/ABAC/ACL + /attack/*
+│       ├── webauthn.ts              # FIDO2 + /attack/*
+│       ├── kerberos-sim.ts          # Kerberos KDC + /attack/*
+│       ├── oidc-saml-sim.ts         # OIDC (PKCE) + SAML IdP + /attack/*
+│       ├── sso-apikey.ts            # SSO + API キー + /attack/*
+│       ├── mfa-totp.ts              # MFA/TOTP + /attack/*
+│       ├── passkey.ts               # パスキー + /attack/*
+│       └── tls-sim.ts               # TLS 1.3 ハンドシェイク + /attack/*
+├── shared/
+│   └── api-types.ts                 # 共有型 (ServerTrace, AttackScenarioMeta, AttackResult<TExtra>, AttackStep 等)
+├── src/
+│   ├── api/client.ts                # fetch ラッパー (リクエスト/レスポンス自動キャプチャ)
+│   ├── i18n/context.tsx             # 言語切替 Signal + Provider
+│   ├── types/{index,security}.ts    # 型定義
+│   ├── data/*.ts                    # 静的データ
+│   ├── state/{app,security,attack}-state.ts # グローバル Signal
+│   ├── utils/{colors,animation,security-colors}.ts
+│   └── components/
+│       ├── shared/
+│       │   ├── DataFlowPanel.tsx    # HTTP/Trace/DB 折りたたみパネル
+│       │   ├── AttackPanel.tsx      # 攻撃デモ統合 (現状ナレーション型、Phase 1 で live モード追加)
+│       │   ├── AttackStepTimeline.tsx, AttackResultBanner.tsx, AttackDefensePanel.tsx
+│       │   ├── AttackScenarioSelector.tsx, EducationalWarningBanner.tsx
+│       │   └── (TabBar, StepControl, etc.)
+│       ├── overview/                # View 1: 7層ダイアグラム
+│       ├── encapsulation/           # View 2: ヘッダ追加/除去アニメーション
+│       ├── scenario/                # View 3: HTTP/DNS/TLS パケットフロー
+│       ├── comparison/              # View 4: OSI⇔TCP/IP マッピング
+│       ├── auth/                    # View 5: 12 タブ × 38 攻撃シナリオ
+│       │   └── attacks/scenarios/*.ts # タブ別攻撃メタデータ (12 ファイル)
+│       └── security/                # View 6: パケットモニター/証明書/FW/攻撃マップ
+└── DESIGN/                          # 攻撃カタログ設計書 (00-04 共通 + 10-21 タブ別)
 ```
+
+### Phase 1 で追加予定 (live attack 化 — `live_attack_architecture` メモリ参照)
+
+```
+osi-reference/
+├── services/                        # 新規: 独立コンテナサービス群 (npm workspaces)
+│   ├── victim-web/                  # 脆弱 Hono アプリ (orchestrator から実 HTTP で叩く対象)
+│   │   ├── package.json             # 独立 package
+│   │   ├── Dockerfile
+│   │   ├── src/
+│   │   └── tsconfig.json
+│   ├── attacker-shell/              # alpine + curl/openssl/nc (--read-only --cap-drop=ALL)
+│   │   └── Dockerfile
+│   └── README.md                    # サービス追加手順テンプレ
+├── docker-compose.yml               # victim-net (internal=true) で外部 egress 遮断
+└── package.json                     # workspaces: ["services/*"] 化
+```
+
+`server/` は **orchestrator** 役に追加進化 (`POST /api/orchestrator/exec` で raw HTTP プロキシ + `_trace` 整形)。既存ナレーション型 `/attack/*` は Phase 5 まで残置 → C/D 群シナリオで継続使用。
+
+### 将来計画 (L1/L2 深掘り — NAND → ブレッドボード → NBIT CPU)
+
+```
+osi-reference/
+├── src/components/circuits/         # 将来: Blender Node 風 + ブレッドボード UI
+├── packages/                        # 将来: 共有ライブラリ
+│   └── nand-sim-core/               # 必要になったら WASM ベース sim core 等
+└── services/                        # ハーネス系外部連携サービスもここに追加
+```
+
+実装は未着手。`services/` 構造は L1/L2 教材の追加にも適合 (1 PJ N サービス)。
 
 ## 認証・認可インタラクティブデモ (実装済み)
-全10タブに実動作デモを追加完了。各デモは `DataFlowPanel` で HTTP リクエスト/レスポンスと `_trace` (DB操作・暗号処理・セッション操作) をリアルタイム表示。
+全12タブに正常系デモ + 攻撃シナリオ (計 38 シナリオ、PR #6 = becc5fc) を実装。各デモは `DataFlowPanel` で HTTP リクエスト/レスポンスと `_trace` (DB操作・暗号処理・セッション操作) をリアルタイム表示。
 
-| タブ | デモ内容 | バックエンドルート |
-|------|---------|-------------------|
-| 認証方式 | パスワード登録/ログイン、bcryptハッシュ可視化、usersテーブル表示 | password-auth.ts |
-| JWT | サーバーサイド署名 (HS256/RS256)、検証、改竄検出、有効期限カウントダウン | jwt-ops.ts |
-| OAuth 2.0 | ライブフロー (認可コード → トークン交換 → リソースアクセス) | oauth-sim.ts |
-| Session vs Token | 左右並列デモ (Cookie認証 vs Bearer トークン) | session-auth.ts, token-auth.ts |
-| アクセス制御 | RBAC/ABAC/ACL アクセスチェック、評価ステップ可視化 | rbac.ts |
-| FIDO2/WebAuthn | 実WebAuthn API呼び出し、チャレンジ/レスポンス可視化 | webauthn.ts |
-| OIDC & SAML | OIDC PKCE付きフロー + ID Token、SAML アサーション生成 | oidc-saml-sim.ts |
-| Kerberos | KDCシミュレーション、AES暗号化チケット生成/復号 | kerberos-sim.ts |
-| TLS詳細 | ハンドシェイクシミュレーション (ECDHE、証明書、セッションキー) | tls-sim.ts |
-| SSO/API Key | SSO セッション伝播、API キー生成・HMAC検証 | sso-apikey.ts |
+| タブ | 正常系デモ | 攻撃シナリオ | バックエンドルート |
+|------|---------|------|-------------------|
+| 認証方式 | パスワード登録/ログイン、bcryptハッシュ可視化 | bcrypt vs rainbow / timing / bruteforce | password-auth.ts |
+| JWT | サーバー署名 (HS256/RS256)、検証、改竄検出 | alg=none / 弱秘密鍵 / 署名ストリッピング / kid injection | jwt-ops.ts |
+| OAuth 2.0 | ライブフロー (認可コード → トークン交換) | state CSRF / redirect_uri バイパス / コード傍受 | oauth-sim.ts |
+| Session vs Token | 左右並列 (Cookie 認証 vs Bearer) | セッション固定 / XSS Cookie 窃取 / リプレイ | session-auth.ts, token-auth.ts |
+| アクセス制御 | RBAC/ABAC/ACL 評価ステップ可視化 | IDOR / 水平・垂直権限昇格 / ABAC 改竄 | rbac.ts |
+| FIDO2/WebAuthn | 実 `navigator.credentials.*` 呼び出し | フィッシング耐性 / vs パスワード / チャレンジリプレイ | webauthn.ts |
+| OIDC & SAML | OIDC PKCE + ID Token、SAML アサーション | SAML XSW / アサーションリプレイ / aud 検証省略 | oidc-saml-sim.ts |
+| Kerberos | KDC シミュ、AES 暗号化チケット | Pass-the-Ticket / Kerberoasting / Golden Ticket | kerberos-sim.ts |
+| TLS詳細 | ハンドシェイク (ECDHE、証明書) | ダウングレード / 自己署名 MITM / 弱 cipher | tls-sim.ts |
+| SSO/API Key | SSO セッション伝播、HMAC 検証 | API キー漏洩 / HMAC バイパス / リプレイ | sso-apikey.ts |
+| MFA/TOTP | TOTP コード生成/検証 | OTP リプレイ / 時刻ずれ DoS / SIM スワップ | mfa-totp.ts |
+| パスキー | プラットフォーム/クロスデバイス | フィッシング耐性 / クラウド同期侵害 / cross-device MITM | passkey.ts |
+
+攻撃シナリオは現状「サーバ側ナレーション生成型」。Phase 1 以降で順次 live 化 (実 HTTP + Docker 隔離 victim) — 詳細は本ファイル「ロードマップ」section 参照。
 
 ## バックエンド設計パターン
 - **_trace レスポンス**: 全API レスポンスに `_trace` フィールドで教育用メタデータ (DbQuery[], CryptoOp[], SessionOp[]) を自動付与
@@ -103,17 +149,56 @@ const res = await apiPost<ResponseType>("/api/endpoint", body, SCOPE);
 <DataFlowPanel scopeId={SCOPE} />
 ```
 
-## 実装計画
-詳細な Phase 別実装手順は `PLAN.md` を参照。
+## DESIGN ⇄ 実装 対応表 (Component Mapping)
+
+DESIGN/30-34 と Phase 1 で生成された実装ファイルの対応関係。
+PR レビュー時の「仕様 ↔ 実装」往復に使う。Phase 2+ で新規ファイルを足すたびに本表を更新する。
+
+| DESIGN セクション | 実装ファイル | 役割 |
+|---|---|---|
+| DESIGN/30 §2-3 (アーキ・データフロー) | `docker-compose.yml`, root `package.json` (workspaces) | コンテナ構成・サービス起動 |
+| DESIGN/30 §7.1 (npm scripts) | root `package.json` の `dev` / `dev:no-docker` / `dev:victim` / `victim:reset` / `victim:logs` | DX (Docker / no-docker フォールバック) |
+| DESIGN/31 §3 (Request スキーマ) | `server/routes/orchestrator-exec.ts` (zod schema) | バリデーション・エラーコード |
+| DESIGN/31 §4 (Response 型) | `shared/api-types.ts` (`OrchestratorExecResponse`, `RawExchange`, `RawHttpRequest/Response`) | 双方向 raw bytes 型 |
+| DESIGN/31 §5 (VICTIM_ALLOWLIST) | `server/routes/orchestrator-exec.ts` (`VICTIM_ALLOWLIST`), `shared/api-types.ts` (`VictimTarget`, `VictimEntry`) | URL 偽造防止 |
+| DESIGN/31 §6 (raw HTTP プロキシ) | `server/routes/orchestrator-exec.ts` (`proxyToVictim`) | Node `http.request` + Host 強制上書き |
+| DESIGN/31 §7 (`_trace` 拡張) | `server/middleware/trace-logger.ts` (`setLiveMode`, `mode`, `victimNote`, `isAttackPath` の orchestrator 追加) | live/narration の区別 |
+| DESIGN/31 §8 (Production guard) | `server/middleware/production-guard.ts` | `NODE_ENV==="production"` で 503 |
+| DESIGN/32 §2 (services/victim-web 構造) | `services/victim-web/{package.json,tsconfig.json,Dockerfile,src/index.ts,src/routes/jwt-vuln.ts}` | 脆弱 victim アプリ |
+| DESIGN/32 §4.1 (JWT 脆弱エンドポイント) | `services/victim-web/src/routes/jwt-vuln.ts` | `POST /jwt/verify` (alg=none 受理) |
+| DESIGN/32 §6 (Dockerfile + compose 安全設定) | `services/victim-web/Dockerfile`, `docker-compose.yml` (victim-web セクション) | tmpfs / cap_drop / read_only |
+| DESIGN/33 §2 (RawHttpComposer) | `src/components/shared/RawHttpComposer.tsx`, `RawHttpComposer.css` | 生 HTTP リクエスト編集 UI |
+| DESIGN/33 §3 (SequenceDiagramView) | **PR-2 で追加予定** | D3 シーケンス図 |
+| DESIGN/33 §4 (AttackPanel 統合) | `src/components/shared/AttackPanel.tsx` (`isLiveMode()`, `onRunLiveScenario`) | 排他 `<Show>` |
+| DESIGN/33 §5 (mode バッジ) | `RawHttpComposer.tsx` の `.raw-http-composer-live-badge` のみ実装。`EducationalWarningBanner` / `AttackScenarioSelector` バッジは **PR-2 で追加予定** | LIVE/NARRATION 表示 |
+| DESIGN/34 §4 (新規安全装置) | `victim-net: internal: true`, `productionGuard`, `Host` 強制上書き, `cap_drop`, `read_only`, `tmpfs` | OS レイヤ防御 |
+| DESIGN/30 §6.2 (`mode` フィールド) | `shared/api-types.ts` (`AttackScenarioMeta.mode`, `liveTemplate`) | live/narration 切替 |
+| DESIGN/30 §5.3 (Phase 2 PoC 第 1 号) | `src/components/auth/attacks/scenarios/jwt-scenarios.ts` (`jwt-alg-none` の `mode: "live"`) + `src/components/auth/JwtInspector.tsx` (`onRunLiveScenario` 配線) | 学習者検証経路 |
+
+## ロードマップ: 攻撃デモの live 化 (Phase 1-5, 約 11 週)
+
+| Phase | 内容 | 期間 |
+|---|---|---|
+| 1 | docker-compose + `services/victim-web/` + orchestrator/exec + RawHttpComposer 共通基盤 | 1-2 週 |
+| 2 | PoC 5 件 (jwt-alg-none, oauth-state-csrf, rbac-idor, session-fixation, mfa-otp-replay) | 2 週 |
+| 3 | A 群残り 13 件 | 4 週 |
+| 4 | B 群 5 件 (TLS / SAML XSW) → victim-tls-proxy / victim-saml-idp 追加 | 3 週 |
+| 5 | C/D 群バッジ整理、`is_attack_sim` 削除検討 | 1 週 |
+
+詳細 (38 シナリオ分類、安全制約への影響、意思決定履歴) は `CHECKPOINT.md` および `live_attack_architecture` メモリを参照。Phase 1-2 は `dev:no-docker` フォールバック維持、Phase 3+ から Docker 必須。
+
+正式仕様化は Step A (`design-phase` スキル) で `DESIGN/30-live-attack-architecture.md` 以降に書き起こす予定。
 
 ## セッション引き継ぎ手順
-1. `cd osi-reference && npm run dev` で現状確認 (フロント+バックエンド同時起動)
-2. `curl http://localhost:3001/api/health` でバックエンド動作確認
-3. 認証タブ (`/auth/*`) で各デモの動作確認
-4. 改善が必要な場合は該当する `server/routes/*.ts` と `src/components/auth/*.tsx` を修正
+1. `git status` / `git log --oneline -5` で進捗確認
+2. `CHECKPOINT.md` および `live_attack_architecture` / `phase35_backlog` メモリを確認
+3. `npm run dev` で現状動作確認 (フロント:3000, バックエンド:3001)
+4. `curl http://localhost:3001/api/health` でバックエンド疎通確認
+5. 認証タブ (`/auth/*`) で各デモ動作確認、必要に応じて `server/routes/*.ts` と `src/components/auth/*.tsx` を修正
 
-## 今後の改善候補
-- i18n: デモ部分の日英テキスト充実
-- PCBテーマ: デモUI部分のテーマ統一性向上
-- エラーハンドリング: サーバー接続失敗時のグレースフルフォールバック
-- テスト: バックエンドAPI のVitestテスト追加
+## 並行残課題 (live 化計画と独立)
+`phase35_backlog` メモリ参照:
+- GitGuardian 永続化 (`.gitguardian.yaml` で test/demo 系 secret 7 件 ignore) — CI ノイズ削減効果大
+- SEC-13 (`setInterval` クリーンアップ + `attack_log` TTL)、SEC-6、SEC-FIDO2-1 等 Tier 3
+- D07/D09/D10/D13/D14/D15/D16: AttackStep payload 文言調整
+- ROB-FIND-005/012: `AttackResult.extra` optional / outcome リテラル型分割

