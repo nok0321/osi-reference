@@ -1,0 +1,6 @@
+{
+  "name": "@osi-ref/attacker-shell",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Docker-only image for educational attack simulation. No npm runtime."
+}

@@ -149,6 +149,32 @@ const res = await apiPost<ResponseType>("/api/endpoint", body, SCOPE);
 <DataFlowPanel scopeId={SCOPE} />
 ```
 
+## DESIGN ⇄ 実装 対応表 (Component Mapping)
+
+DESIGN/30-34 と Phase 1 で生成された実装ファイルの対応関係。
+PR レビュー時の「仕様 ↔ 実装」往復に使う。Phase 2+ で新規ファイルを足すたびに本表を更新する。
+
+| DESIGN セクション | 実装ファイル | 役割 |
+|---|---|---|
+| DESIGN/30 §2-3 (アーキ・データフロー) | `docker-compose.yml`, root `package.json` (workspaces) | コンテナ構成・サービス起動 |
+| DESIGN/30 §7.1 (npm scripts) | root `package.json` の `dev` / `dev:no-docker` / `dev:victim` / `victim:reset` / `victim:logs` | DX (Docker / no-docker フォールバック) |
+| DESIGN/31 §3 (Request スキーマ) | `server/routes/orchestrator-exec.ts` (zod schema) | バリデーション・エラーコード |
+| DESIGN/31 §4 (Response 型) | `shared/api-types.ts` (`OrchestratorExecResponse`, `RawExchange`, `RawHttpRequest/Response`) | 双方向 raw bytes 型 |
+| DESIGN/31 §5 (VICTIM_ALLOWLIST) | `server/routes/orchestrator-exec.ts` (`VICTIM_ALLOWLIST`), `shared/api-types.ts` (`VictimTarget`, `VictimEntry`) | URL 偽造防止 |
+| DESIGN/31 §6 (raw HTTP プロキシ) | `server/routes/orchestrator-exec.ts` (`proxyToVictim`) | Node `http.request` + Host 強制上書き |
+| DESIGN/31 §7 (`_trace` 拡張) | `server/middleware/trace-logger.ts` (`setLiveMode`, `mode`, `victimNote`, `isAttackPath` の orchestrator 追加) | live/narration の区別 |
+| DESIGN/31 §8 (Production guard) | `server/middleware/production-guard.ts` | `NODE_ENV==="production"` で 503 |
+| DESIGN/32 §2 (services/victim-web 構造) | `services/victim-web/{package.json,tsconfig.json,Dockerfile,src/index.ts,src/routes/jwt-vuln.ts}` | 脆弱 victim アプリ |
+| DESIGN/32 §4.1 (JWT 脆弱エンドポイント) | `services/victim-web/src/routes/jwt-vuln.ts` | `POST /jwt/verify` (alg=none 受理) |
+| DESIGN/32 §6 (Dockerfile + compose 安全設定) | `services/victim-web/Dockerfile`, `docker-compose.yml` (victim-web セクション) | tmpfs / cap_drop / read_only |
+| DESIGN/33 §2 (RawHttpComposer) | `src/components/shared/RawHttpComposer.tsx`, `RawHttpComposer.css` | 生 HTTP リクエスト編集 UI |
+| DESIGN/33 §3 (SequenceDiagramView) | **PR-2 で追加予定** | D3 シーケンス図 |
+| DESIGN/33 §4 (AttackPanel 統合) | `src/components/shared/AttackPanel.tsx` (`isLiveMode()`, `onRunLiveScenario`) | 排他 `<Show>` |
+| DESIGN/33 §5 (mode バッジ) | `RawHttpComposer.tsx` の `.raw-http-composer-live-badge` のみ実装。`EducationalWarningBanner` / `AttackScenarioSelector` バッジは **PR-2 で追加予定** | LIVE/NARRATION 表示 |
+| DESIGN/34 §4 (新規安全装置) | `victim-net: internal: true`, `productionGuard`, `Host` 強制上書き, `cap_drop`, `read_only`, `tmpfs` | OS レイヤ防御 |
+| DESIGN/30 §6.2 (`mode` フィールド) | `shared/api-types.ts` (`AttackScenarioMeta.mode`, `liveTemplate`) | live/narration 切替 |
+| DESIGN/30 §5.3 (Phase 2 PoC 第 1 号) | `src/components/auth/attacks/scenarios/jwt-scenarios.ts` (`jwt-alg-none` の `mode: "live"`) + `src/components/auth/JwtInspector.tsx` (`onRunLiveScenario` 配線) | 学習者検証経路 |
+
 ## ロードマップ: 攻撃デモの live 化 (Phase 1-5, 約 11 週)
 
 | Phase | 内容 | 期間 |

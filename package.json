@@ -3,14 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "services/*"
+  ],
   "scripts": {
-    "dev": "concurrently \"vite\" \"tsx watch server/index.ts\"",
+    "dev": "docker compose up -d victim-web && concurrently \"vite\" \"tsx watch server/index.ts\"",
+    "dev:no-docker": "concurrently \"vite\" \"tsx watch server/index.ts\" \"npm --workspace=@osi-ref/victim-web run dev\"",
     "dev:client": "vite",
     "dev:server": "tsx watch server/index.ts",
+    "dev:victim": "npm --workspace=@osi-ref/victim-web run dev",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest",
-    "test:ci": "vitest run"
+    "test:ci": "vitest run",
+    "victim:reset": "docker compose restart victim-web",
+    "victim:logs": "docker compose logs -f victim-web"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.13",

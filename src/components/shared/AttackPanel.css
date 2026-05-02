@@ -99,3 +99,13 @@
   outline: 2px solid var(--glow-color);
   outline-offset: 2px;
 }
+
+.attack-error-toast {
+  background: var(--color-danger-dim, rgba(255, 77, 79, 0.15));
+  color: var(--color-danger, #ff4d4f);
+  border: 1px solid var(--color-danger-border, rgba(255, 77, 79, 0.3));
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  padding: 8px 12px;
+}

@@ -3,6 +3,8 @@ import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import { traceMiddleware } from "./middleware/trace-logger.js";
 import { ensureAttackEnabled } from "./middleware/attack-guard.js";
+import { productionGuard } from "./middleware/production-guard.js";
+import { orchestratorExecRoutes } from "./routes/orchestrator-exec.js";
 import { getDb, seedDb } from "./db/schema.js";
 import { passwordAuthRoutes } from "./routes/password-auth.js";
 import { jwtOpsRoutes } from "./routes/jwt-ops.js";
@@ -31,8 +33,10 @@ app.use("/api/*", async (c, next) => {
   await next();
 });
 app.use("/api/*", traceMiddleware);
+app.use("/api/orchestrator/*", productionGuard);
 
 // ── Routes ──
+app.route("/api/orchestrator", orchestratorExecRoutes);
 app.route("/api/auth/password", passwordAuthRoutes);
 app.route("/api/jwt", jwtOpsRoutes);
 app.route("/api/session", sessionAuthRoutes);
