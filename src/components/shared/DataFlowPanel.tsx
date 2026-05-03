@@ -1,20 +1,34 @@
 import { createSignal, createEffect, Show, For } from "solid-js";
 import { useI18n } from "../../i18n/context";
 import type { CapturedExchange, ServerTrace, CryptoOp, DbQuery, SessionOp } from "../../api/client";
-import type { AttackStep } from "../../../shared/api-types";
+import type { AttackStep, RawExchange } from "../../../shared/api-types";
 import { getScopedExchanges } from "../../api/client";
 import { safeStringify } from "../../utils/safe-stringify";
+import SequenceDiagramView from "./SequenceDiagramView";
 import "./DataFlowPanel.css";
 
 interface DataFlowPanelProps {
   scopeId: string;
   defaultOpen?: boolean;
+  /** mode: "live" シナリオ実行中のみ true。Sequence タブを露出するか判定 (DESIGN/33 §4.3) */
+  isLiveMode?: boolean;
+  /** 直近の orchestrator/exec レスポンスから抽出した raw exchange。null/未指定時は空状態 */
+  rawExchange?: RawExchange | null;
 }
+
+type DataFlowTab = "http" | "trace" | "db" | "sequence";
 
 export default function DataFlowPanel(props: DataFlowPanelProps) {
   const { t } = useI18n();
   const [open, setOpen] = createSignal(props.defaultOpen ?? false);
-  const [tab, setTab] = createSignal<"http" | "trace" | "db">("http");
+  const [tab, setTab] = createSignal<DataFlowTab>("http");
+
+  // live モードを抜けた瞬間に sequence タブを選択していたら http に戻す
+  createEffect(() => {
+    if (!props.isLiveMode && tab() === "sequence") {
+      setTab("http");
+    }
+  });
 
   const exs = () => getScopedExchanges(props.scopeId)();
 
@@ -41,6 +55,11 @@ export default function DataFlowPanel(props: DataFlowPanelProps) {
           <button class="data-flow-tab" role="tab" aria-selected={tab() === "db"} data-active={tab() === "db"} onClick={() => setTab("db")}>
             {t("DB操作", "DB Queries")}
           </button>
+          <Show when={props.isLiveMode}>
+            <button class="data-flow-tab" role="tab" aria-selected={tab() === "sequence"} data-active={tab() === "sequence"} onClick={() => setTab("sequence")}>
+              {t("シーケンス", "Sequence")}
+            </button>
+          </Show>
         </div>
 
         <div class="data-flow-content" role="tabpanel" aria-live="polite">
@@ -52,6 +71,12 @@ export default function DataFlowPanel(props: DataFlowPanelProps) {
           </Show>
           <Show when={tab() === "db"}>
             <DbQueryView exchanges={exs()} />
+          </Show>
+          <Show when={tab() === "sequence" && props.isLiveMode}>
+            <SequenceDiagramView
+              exchange={props.rawExchange ?? null}
+              scenarioId={props.scopeId}
+            />
           </Show>
         </div>
       </Show>

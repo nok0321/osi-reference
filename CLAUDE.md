@@ -167,10 +167,12 @@ PR レビュー時の「仕様 ↔ 実装」往復に使う。Phase 2+ で新規
 | DESIGN/32 §2 (services/victim-web 構造) | `services/victim-web/{package.json,tsconfig.json,Dockerfile,src/index.ts,src/routes/jwt-vuln.ts}` | 脆弱 victim アプリ |
 | DESIGN/32 §4.1 (JWT 脆弱エンドポイント) | `services/victim-web/src/routes/jwt-vuln.ts` | `POST /jwt/verify` (alg=none 受理) |
 | DESIGN/32 §6 (Dockerfile + compose 安全設定) | `services/victim-web/Dockerfile`, `docker-compose.yml` (victim-web セクション) | tmpfs / cap_drop / read_only |
-| DESIGN/33 §2 (RawHttpComposer) | `src/components/shared/RawHttpComposer.tsx`, `RawHttpComposer.css` | 生 HTTP リクエスト編集 UI |
-| DESIGN/33 §3 (SequenceDiagramView) | **PR-2 で追加予定** | D3 シーケンス図 |
-| DESIGN/33 §4 (AttackPanel 統合) | `src/components/shared/AttackPanel.tsx` (`isLiveMode()`, `onRunLiveScenario`) | 排他 `<Show>` |
-| DESIGN/33 §5 (mode バッジ) | `RawHttpComposer.tsx` の `.raw-http-composer-live-badge` のみ実装。`EducationalWarningBanner` / `AttackScenarioSelector` バッジは **PR-2 で追加予定** | LIVE/NARRATION 表示 |
+| DESIGN/33 §2 (RawHttpComposer) | `src/components/shared/RawHttpComposer.tsx`, `RawHttpComposer.css` (Headers / Body / Raw タブ) | 生 HTTP リクエスト編集 UI |
+| DESIGN/33 §3 (SequenceDiagramView) | `src/components/shared/SequenceDiagramView.tsx`, `SequenceDiagramView.css` | D3 SVG シーケンス図 + raw bytes ポップアップ |
+| DESIGN/33 §4 (AttackPanel 統合) | `src/components/shared/AttackPanel.tsx` (`isLiveMode()`, `onRunLiveScenario`, `rawExchange` Signal), `DataFlowPanel.tsx` (Sequence タブ + `isLiveMode` / `rawExchange` props) | 排他 `<Show>` + Sequence タブ |
+| DESIGN/33 §4.1 (AttackStepTimeline live 派生) | (実装なし) | **PR-1 後 obsolete**: orchestrator が live 経路でも 3 段 AttackStep を返すため不要。raw bytes は SequenceDiagramView 担当。 |
+| DESIGN/33 §5 (mode バッジ) | `RawHttpComposer.tsx` `.raw-http-composer-live-badge`, `EducationalWarningBanner.tsx` (`mode` prop + `.edu-warning-live-badge`), `AttackScenarioSelector.tsx` (`ModeBadge` + `.scenario-mode-badge`) | LIVE/NARRATION 表示 |
+| DESIGN/34 §6 (PR テンプレート) | `.github/pull_request_template.md` | live モード PR チェックリスト |
 | DESIGN/34 §4 (新規安全装置) | `victim-net: internal: true`, `productionGuard`, `Host` 強制上書き, `cap_drop`, `read_only`, `tmpfs` | OS レイヤ防御 |
 | DESIGN/30 §6.2 (`mode` フィールド) | `shared/api-types.ts` (`AttackScenarioMeta.mode`, `liveTemplate`) | live/narration 切替 |
 | DESIGN/30 §5.3 (Phase 2 PoC 第 1 号) | `src/components/auth/attacks/scenarios/jwt-scenarios.ts` (`jwt-alg-none` の `mode: "live"`) + `src/components/auth/JwtInspector.tsx` (`onRunLiveScenario` 配線) | 学習者検証経路 |

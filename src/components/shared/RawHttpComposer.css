@@ -164,6 +164,33 @@
   outline-offset: 1px;
 }
 
+.rhc-raw {
+  margin: 0;
+  padding: 8px 10px;
+  width: 100%;
+  max-height: 240px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+  cursor: default;
+}
+
+.rhc-raw-note {
+  margin: 0.4rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
 .rhc-send {
   align-self: flex-start;
   background: var(--color-attack-accent);
