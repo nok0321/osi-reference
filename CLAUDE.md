@@ -173,6 +173,8 @@ PR レビュー時の「仕様 ↔ 実装」往復に使う。Phase 2+ で新規
 | DESIGN/33 §4.1 (AttackStepTimeline live 派生) | (実装なし) | **PR-1 後 obsolete**: orchestrator が live 経路でも 3 段 AttackStep を返すため不要。raw bytes は SequenceDiagramView 担当。 |
 | DESIGN/33 §5 (mode バッジ) | `RawHttpComposer.tsx` `.raw-http-composer-live-badge`, `EducationalWarningBanner.tsx` (`mode` prop + `.edu-warning-live-badge`), `AttackScenarioSelector.tsx` (`ModeBadge` + `.scenario-mode-badge`) | LIVE/NARRATION 表示 |
 | DESIGN/34 §6 (PR テンプレート) | `.github/pull_request_template.md` | live モード PR チェックリスト |
+| DESIGN/30 §7.2 (CI Docker) | `.github/workflows/ci.yml` の `docker-smoke` job | victim-web image build + healthcheck + /jwt/verify smoke |
+| DESIGN/31 §11 (テスト要件) | `server/__tests__/orchestrator-live.test.ts` (12 tests = 10 spec + 2 extra) | スキーマ違反 / target 不在 / 502 / 504 / production / Host 強制 / mode / victimNote / phase ガード |
 | DESIGN/34 §4 (新規安全装置) | `victim-net: internal: true`, `productionGuard`, `Host` 強制上書き, `cap_drop`, `read_only`, `tmpfs` | OS レイヤ防御 |
 | DESIGN/30 §6.2 (`mode` フィールド) | `shared/api-types.ts` (`AttackScenarioMeta.mode`, `liveTemplate`) | live/narration 切替 |
 | DESIGN/30 §5.3 (Phase 2 PoC 第 1 号) | `src/components/auth/attacks/scenarios/jwt-scenarios.ts` (`jwt-alg-none` の `mode: "live"`) + `src/components/auth/JwtInspector.tsx` (`onRunLiveScenario` 配線) | 学習者検証経路 |

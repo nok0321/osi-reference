@@ -33,3 +33,49 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # DESIGN/30 §7.2: Docker compose で victim-web を起動して /health 疎通を確認する smoke job。
+  # 完全な live integration test (DESIGN/31 §11.2 の `test:live` を実 victim 経由で走らせる) は
+  # Phase 3+ で orchestrator も compose 化したタイミングで追加予定。Phase 1 では image build と
+  # healthcheck の通過までを CI で守る。
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build victim-web image
+        run: docker compose build victim-web
+
+      - name: Start victim-web
+        run: docker compose up -d victim-web
+
+      - name: Wait for /health to respond
+        run: |
+          for i in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:4001/health > /tmp/health.json 2>/dev/null; then
+              echo "victim-web responded on attempt $i"
+              cat /tmp/health.json
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "victim-web did not respond on /health within 60s"
+          docker compose logs victim-web
+          exit 1
+
+      - name: Smoke check /health returns status ok
+        run: |
+          curl --fail --silent --show-error http://127.0.0.1:4001/health > /tmp/health.json
+          grep -q '"status":"ok"' /tmp/health.json
+
+      - name: Smoke check POST /jwt/verify accepts alg=none (vulnerable on purpose)
+        run: |
+          curl --fail --silent --show-error \
+            -X POST http://127.0.0.1:4001/jwt/verify \
+            -H 'Content-Type: application/json' \
+            -d '{"token":"eyJhbGciOiJub25lIn0.eyJzdWIiOiJzZWVkX2FsaWNlIn0."}' \
+            | tee /tmp/verify.json
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
