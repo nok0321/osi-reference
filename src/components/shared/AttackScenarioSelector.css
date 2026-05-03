@@ -146,3 +146,35 @@
   background: var(--color-success-muted);
   color: var(--color-success);
 }
+
+/* ── モードバッジ (LIVE / NARRATION) ── */
+.scenario-mode-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+}
+
+.scenario-mode-badge[data-mode="live"] {
+  background: var(--color-attack-bg);
+  color: var(--color-attack-accent);
+  border-color: var(--color-attack-accent);
+}
+
+.scenario-mode-badge[data-mode="narration"] {
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  border-color: var(--border-subtle);
+}
+
+.attack-scenario-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}

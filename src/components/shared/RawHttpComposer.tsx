@@ -55,7 +55,25 @@ function RawHttpComposer(props: RawHttpComposerProps) {
       .map(([key, value]) => ({ key, value })),
   );
   const [body, setBody] = createSignal<string>(props.template.body);
-  const [activeTab, setActiveTab] = createSignal<"headers" | "body">("body");
+  const [activeTab, setActiveTab] = createSignal<"headers" | "body" | "raw">("body");
+
+  /**
+   * Raw タブ用の派生値。本物の HTTP プレコンパイルではなく可視化用。
+   * Host ヘッダは orchestrator が常に強制上書きするため、プレビューとして表示する。
+   * 編集系操作 (copy/export/persist) は意図的に提供しない (DESIGN/33 §2.4)。
+   */
+  const rawPreview = () => {
+    const userHeaders = headers()
+      .filter((h) => h.key.trim() && h.key.trim().toLowerCase() !== "host")
+      .map((h) => `${h.key.trim()}: ${h.value}`);
+    const lines = [
+      `${method()} ${path() || "/"} HTTP/1.1`,
+      "Host: <victim host> (orchestrator が強制設定 / set by orchestrator)",
+      ...userHeaders,
+    ];
+    const bodyStr = body();
+    return [...lines, "", bodyStr].join("\r\n");
+  };
 
   function updateHeader(idx: number, patch: Partial<HeaderEntry>) {
     setHeaders((prev) =>
@@ -165,6 +183,16 @@ function RawHttpComposer(props: RawHttpComposerProps) {
         >
           {t("ボディ", "Body")}
         </button>
+        <button
+          type="button"
+          class="rhc-tab"
+          role="tab"
+          aria-selected={activeTab() === "raw"}
+          data-active={activeTab() === "raw"}
+          onClick={() => setActiveTab("raw")}
+        >
+          {t("Raw", "Raw")}
+        </button>
       </div>
 
       <div class="raw-http-composer-tabpanel" role="tabpanel">
@@ -233,6 +261,21 @@ function RawHttpComposer(props: RawHttpComposerProps) {
               'e.g. {"token":"<forged JWT>"}',
             )}
           />
+        </Show>
+
+        <Show when={activeTab() === "raw"}>
+          <pre
+            class="rhc-raw"
+            aria-label={t("生 HTTP プレビュー (読み取り専用)", "Raw HTTP preview (read-only)")}
+          >
+            {rawPreview()}
+          </pre>
+          <p class="rhc-raw-note">
+            {t(
+              "プレビューのみ。Host ヘッダは送信時に orchestrator が解決した victim ホストへ強制上書きされます。",
+              "Preview only. The Host header is overwritten at send time by the orchestrator to the resolved victim host.",
+            )}
+          </p>
         </Show>
       </div>
 

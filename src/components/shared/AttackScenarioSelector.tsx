@@ -29,7 +29,10 @@ function AttackScenarioSelector(props: AttackScenarioSelectorProps) {
           <div class="attack-scenario-desc">
             {t(selected()?.descriptionJa ?? "", selected()?.description ?? "")}
           </div>
-          <SeverityBadge severity={selected()?.severity ?? "info"} />
+          <div class="attack-scenario-badges">
+            <SeverityBadge severity={selected()?.severity ?? "info"} />
+            <ModeBadge mode={selected()?.mode} />
+          </div>
         </div>
       </Show>
 
@@ -56,6 +59,7 @@ function AttackScenarioSelector(props: AttackScenarioSelectorProps) {
                   {t(scenario.nameJa, scenario.name)}
                 </span>
                 <SeverityBadge severity={scenario.severity} />
+                <ModeBadge mode={scenario.mode} />
                 <Show when={scenario.cweId && /^CWE-\d+$/.test(scenario.cweId)}>
                   <a
                     class="attack-chip-ref"
@@ -116,6 +120,26 @@ function SeverityBadge(badgeProps: { severity: string }) {
   return (
     <span class="severity-badge" data-severity={badgeProps.severity}>
       {badgeProps.severity.toUpperCase()}
+    </span>
+  );
+}
+
+/**
+ * シナリオの実行モード (`live` / `narration`) を示すバッジ。
+ * 未指定の場合は `narration` 扱い。DESIGN/33 §5.2 準拠。
+ */
+function ModeBadge(badgeProps: { mode?: "live" | "narration" }) {
+  const resolved = badgeProps.mode ?? "narration";
+  return (
+    <span
+      class="scenario-mode-badge"
+      data-mode={resolved}
+      aria-label={resolved === "live"
+        ? "LIVE attack mode (real HTTP)"
+        : "Narration mode (server-rendered simulation)"
+      }
+    >
+      {resolved === "live" ? "LIVE" : "NARRATION"}
     </span>
   );
 }

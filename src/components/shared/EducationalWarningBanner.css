@@ -23,4 +23,19 @@
 
 .edu-warning-text {
   line-height: 1.4;
+  flex: 1 1 auto;
+}
+
+.edu-warning-live-badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  background: var(--color-attack-bg);
+  color: var(--color-attack-accent);
+  border: 2px solid var(--color-attack-accent);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  letter-spacing: 0.12em;
 }

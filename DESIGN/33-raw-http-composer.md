@@ -33,7 +33,7 @@ safety-reviewed: false
 - `AttackScenarioSelector`: 各シナリオ名右側に `[LIVE]` / `[NARRATION]` バッジを追加
 - `AttackPanel`: `meta.mode` を読んで `RawHttpComposer` / 既存実行ボタン を排他表示
 - `DataFlowPanel`: 4 番目のタブ "Sequence" を追加し `SequenceDiagramView` を内包
-- `AttackStepTimeline`: `mode: "live"` では orchestrator レスポンスの `rawExchange` から steps を生成
+- ~~`AttackStepTimeline`: `mode: "live"` では orchestrator レスポンスの `rawExchange` から steps を生成~~ → **PR-1 で obsolete**: orchestrator が live 経路でも probe/exploit|blocked/verify の 3 ステップを生成し `result.steps[]` に詰めて返すため、フロント派生は冗長。raw bytes の視覚化は `SequenceDiagramView` が担当する。詳細は §4.1 参照。
 - `AttackResultBanner` / `AttackDefensePanel`: 変更なし (両モード共通)
 
 ---
@@ -617,6 +617,8 @@ onCleanup(() => {
 
 ### 4.1 変更点
 
+> **注 (PR-1 後 obsolete セクションの統合)**: 当初本仕様には「`AttackStepTimeline` に `liveSteps()` 派生値を追加し `rawExchange` から steps を生成する」という拡張を予定していたが、PR-1 (#14) の実装で `orchestrator-exec.ts` が live 経路でも probe/exploit|blocked/verify の 3 段ステップを `OrchestratorExecResponse.steps[]` に詰めて返す形になったため、フロント側での派生は冗長となった。`AttackStepTimeline` は両モードで `attackResult()?.steps ?? []` を受け取れば十分機能する。raw bytes の視覚化は `SequenceDiagramView` が独立して担当する。本セクションの下記 `AttackPanel` の変更点のみ有効。
+
 `AttackPanel.tsx` に `mode` 判定を追加する。シナリオの `meta.mode` を参照して
 `RawHttpComposer` / 既存実行ボタンを排他表示に切り替える。
 
@@ -860,7 +862,7 @@ if (res.status === 502) {
 | `EducationalWarningBanner.tsx` | `mode` prop 追加。`mode === "live"` 時の LIVE バッジ表示 | 小 (子要素追加のみ) |
 | `AttackScenarioSelector.tsx` | `scenario.mode` を読んで `[LIVE]` / `[NARRATION]` バッジ表示 | 小 |
 | `DataFlowPanel.tsx` | `tab` Signal に `"sequence"` 追加。`isLiveMode` / `rawExchange` prop 追加。Sequence タブボタン + `SequenceDiagramView` 表示 | 中 |
-| `AttackStepTimeline.tsx` | `mode: "live"` では orchestrator レスポンスの `rawExchange` から `steps[]` を変換する `liveSteps()` 派生値を追加 | 中 |
+| ~~`AttackStepTimeline.tsx`~~ | ~~`mode: "live"` では orchestrator レスポンスの `rawExchange` から `steps[]` を変換する `liveSteps()` 派生値を追加~~ → **PR-1 後 obsolete**: orchestrator が steps を返すため不要 | なし |
 | `AttackResultBanner.tsx` | 変更なし (両モードで `AttackResult` を受ける) | なし |
 | `AttackDefensePanel.tsx` | 変更なし | なし |
 

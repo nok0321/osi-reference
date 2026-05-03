@@ -4,6 +4,8 @@ import type {
   AttackScenarioMeta,
   AttackResult,
   OrchestratorExecRequest,
+  OrchestratorExecResponse,
+  RawExchange,
   VictimTarget,
 } from "../../../shared/api-types";
 import type { AuthSubView } from "../../types/security";
@@ -43,6 +45,7 @@ function AttackPanel(props: AttackPanelProps) {
     props.scenarios[0]?.id ?? ""
   );
   const [attackResult, setAttackResult] = createSignal<AttackResult | null>(null);
+  const [rawExchange, setRawExchange] = createSignal<RawExchange | null>(null);
   const [running, setRunning] = createSignal(false);
   const [defenseOpen, setDefenseOpen] = createSignal(false);
   const [errorMessage, setErrorMessage] = createSignal<string | null>(null);
@@ -71,10 +74,11 @@ function AttackPanel(props: AttackPanelProps) {
     }
   });
 
-  /* シナリオ切替時に直前の結果・エラーをクリア */
+  /* シナリオ切替時に直前の結果・エラー・rawExchange をクリア */
   createEffect(() => {
     selectedId();
     setAttackResult(null);
+    setRawExchange(null);
     setErrorMessage(null);
   });
 
@@ -83,6 +87,7 @@ function AttackPanel(props: AttackPanelProps) {
     if (!scenario || running()) return;
     setRunning(true);
     setAttackResult(null);
+    setRawExchange(null);
     setDefenseOpen(false);
     setErrorMessage(null);
     try {
@@ -101,11 +106,16 @@ function AttackPanel(props: AttackPanelProps) {
     if (!scenario || running() || !props.onRunLiveScenario) return;
     setRunning(true);
     setAttackResult(null);
+    setRawExchange(null);
     setDefenseOpen(false);
     setErrorMessage(null);
     try {
       const result = await props.onRunLiveScenario(scenario, payload);
       setAttackResult(result);
+      // OrchestratorExecResponse extends AttackResult & { rawExchange, mode: "live" }。
+      // success path のみ runtime で rawExchange を保持する (error fallback path は plain AttackResult)。
+      const live = result as Partial<OrchestratorExecResponse>;
+      setRawExchange(live.rawExchange ?? null);
       if (result.outcome === "error") {
         setErrorMessage(result.summaryJa ?? result.summary ?? t("実行エラー", "Execution error"));
       }
@@ -116,8 +126,8 @@ function AttackPanel(props: AttackPanelProps) {
 
   return (
     <div class="attack-panel">
-      {/* 1. 教育用バナー (常時表示) */}
-      <EducationalWarningBanner />
+      {/* 1. 教育用バナー (常時表示)。live モードでは LIVE バッジを付与 */}
+      <EducationalWarningBanner mode={isLiveMode() ? "live" : "narration"} />
 
       <div class="attack-panel-inner">
         {/* 2. シナリオセレクタ */}
@@ -208,8 +218,13 @@ function AttackPanel(props: AttackPanelProps) {
           <AttackResultBanner result={attackResult()!} />
         </Show>
 
-        {/* 8. DataFlowPanel */}
-        <DataFlowPanel scopeId={`attack-${props.tabId}`} defaultOpen={false} />
+        {/* 8. DataFlowPanel — live モード時のみ Sequence タブが露出する */}
+        <DataFlowPanel
+          scopeId={`attack-${props.tabId}`}
+          defaultOpen={false}
+          isLiveMode={isLiveMode()}
+          rawExchange={rawExchange()}
+        />
       </div>
     </div>
   );
