@@ -16,6 +16,7 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:ci": "vitest run",
+    "test:live": "vitest run server/__tests__/orchestrator-live.test.ts",
     "victim:reset": "docker compose restart victim-web",
     "victim:logs": "docker compose logs -f victim-web"
   },

@@ -32,34 +32,41 @@ import type {
 export const orchestratorExecRoutes = new Hono();
 
 // ── VICTIM_ALLOWLIST (DESIGN/31 §5.1) ─────────────────────────────────
-const VICTIM_ALLOWLIST: ReadonlyMap<VictimTarget, VictimEntry> = new Map([
-  [
-    "victim-web",
-    {
-      // docker compose 環境では `victim-web` の DNS、dev:no-docker 環境では localhost を解決する。
-      // VICTIM_WEB_BASE_URL は test 用 override のみ許可 (本番デプロイ時は使われない)。
-      baseUrl: process.env.VICTIM_WEB_BASE_URL ?? "http://localhost:4001",
-      network: "victim-net",
-      phaseAvailable: 1,
-    },
-  ],
-  [
-    "attacker-shell",
-    {
-      baseUrl: "exec://attacker-shell",
-      network: "victim-net",
-      phaseAvailable: 2, // Phase 1 では HTTP プロキシ未対応 (Phase 2 で docker exec 対応予定)
-    },
-  ],
-] as const);
+//
+// テスト容易性 (DESIGN/31 §11.2) のため、`baseUrl` と Phase ガードはリクエスト
+// ごとに環境変数を再評価する。これにより in-process モック victim を立て
+// `VICTIM_WEB_BASE_URL` を切り替えるテストが書ける。本番では環境変数は
+// 設定しないため挙動は実質変わらない。
+function getVictimAllowlist(): ReadonlyMap<VictimTarget, VictimEntry> {
+  return new Map<VictimTarget, VictimEntry>([
+    [
+      "victim-web",
+      {
+        // docker compose 環境では `victim-web` の DNS、dev:no-docker 環境では localhost を解決する。
+        // VICTIM_WEB_BASE_URL は test 用 override のみ許可 (本番デプロイ時は使われない)。
+        baseUrl: process.env.VICTIM_WEB_BASE_URL ?? "http://localhost:4001",
+        network: "victim-net",
+        phaseAvailable: 1,
+      },
+    ],
+    [
+      "attacker-shell",
+      {
+        baseUrl: "exec://attacker-shell",
+        network: "victim-net",
+        phaseAvailable: 2, // Phase 1 では HTTP プロキシ未対応 (Phase 2 で docker exec 対応予定)
+      },
+    ],
+  ]);
+}
 
 // ── Phase ガード ─────────────────────────────────────────────────────
-const CURRENT_PHASE = (() => {
+function getCurrentPhase(): 1 | 2 | 3 | 4 | 5 {
   const env = process.env.LIVE_ATTACK_PHASE;
   const parsed = env ? Number(env) : 1;
   if (![1, 2, 3, 4, 5].includes(parsed)) return 1;
   return parsed as 1 | 2 | 3 | 4 | 5;
-})();
+}
 
 // ── zod スキーマ (DESIGN/31 §3.1) ─────────────────────────────────────
 const HTTP_METHOD_VALUES = [
@@ -119,7 +126,7 @@ orchestratorExecRoutes.post("/exec", async (c) => {
   };
 
   // 2. VICTIM_ALLOWLIST 検証
-  const entry = VICTIM_ALLOWLIST.get(req.target);
+  const entry = getVictimAllowlist().get(req.target);
   if (!entry) {
     // セキュリティログ: 不在キーは URL 偽造試行の可能性。target 値はレスポンスに含めない (情報漏洩防止)
     console.warn(
@@ -140,13 +147,14 @@ orchestratorExecRoutes.post("/exec", async (c) => {
   }
 
   // 3. Phase ガード
-  if (entry.phaseAvailable > CURRENT_PHASE) {
+  const currentPhase = getCurrentPhase();
+  if (entry.phaseAvailable > currentPhase) {
     return c.json(
       {
         success: false,
         error: "phase_not_reached",
         requiredPhase: entry.phaseAvailable,
-        currentPhase: CURRENT_PHASE,
+        currentPhase,
       },
       503,
     );
