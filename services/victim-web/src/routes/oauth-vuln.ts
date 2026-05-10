@@ -11,11 +11,31 @@
  *
  * 対応 CWE: CWE-352 (state CSRF)
  * 堅牢実装: server/routes/oauth-sim.ts (state 必須検証)
- * 関連設計書: DESIGN/04-safety-guardrails.md, DESIGN/32-victim-web-spec.md §4.4
+ * 関連設計書: DESIGN/04-safety-guardrails.md, DESIGN/32-victim-web-spec.md §4.4,
+ *             DESIGN/35-attack-storyboard.md (PR-A 波及で leakedToAttacker 追記)
  */
 import { Hono } from "hono";
 
 export const oauthVulnRoutes = new Hono();
+
+/**
+ * 教材用「攻撃者がこのコードで奪取する予定の victim プロファイル」。
+ * state なしで authorize された code を attacker が握れば、後段の
+ * /oauth/token 交換で access_token と紐付くこのデータ一式が手に入る。
+ * authorize 段階のレスポンス自体には profile は含まれないが、storyboard で
+ * 「攻撃成立後に何が漏えいするか」を可視化するため、教材的に同一レスポンスへ
+ * leakedToAttacker として埋め込む (totp-vuln.ts / jwt-vuln.ts と同パターン)。
+ */
+const VICTIM_PROFILE_AT_RISK = {
+  userId: 1,
+  username: "seed_alice",
+  email: "alice@victim.local",
+  fullName: "Alice Demo",
+  scopesGranted: ["read", "profile"],
+  // この code を attacker が token endpoint に渡した結果として
+  // 払い出される予定の access_token (教材スタブ — 実トークンは含まない)
+  futureAccessToken: "VICTIM_AT_REDACTED_alice_seed_8a9c",
+} as const;
 
 /**
  * 脆弱: state パラメータを一切検証せず認可コードを発行する。
@@ -23,8 +43,8 @@ export const oauthVulnRoutes = new Hono();
  *
  * 期待入力: GET /oauth/authorize?client_id=<id>&redirect_uri=<uri>[&scope=<scope>][&state=<state>]
  * 期待挙動:
- *   - state なし → 200 + 認可コード発行 (脆弱性の核心)
- *   - state あり → 200 + 認可コード発行 (検証も無効化されているため state は単に echo)
+ *   - state なし → 200 + 認可コード発行 + leakedToAttacker (脆弱性の核心)
+ *   - state あり → 200 + 認可コード発行 + leakedToAttacker (検証も無効化されているため state は単に echo)
  *   - client_id / redirect_uri 欠如 → 400
  *
  * 堅牢実装 (server/routes/oauth-sim.ts) では state パラメータが必須であり、
@@ -55,6 +75,11 @@ oauthVulnRoutes.get("/authorize", (c) => {
     .toString(36)
     .slice(2, 10)}`;
 
+  // 教材ヒント用ヘッダ (storyboard の data-leak visual で参照しやすい)
+  c.header("X-Authorization-Code", code);
+  c.header("X-Csrf-Risk", "high");
+  c.header("X-State-Validated", "false");
+
   return c.json({
     ok: true,
     code,
@@ -64,5 +89,12 @@ oauthVulnRoutes.get("/authorize", (c) => {
     response_type: responseType,
     state_received: state, // null でも 200 を返す = 脆弱性
     note: "authorization code issued without verifying state (CWE-352 vulnerable: state parameter not enforced)",
+    leakedToAttacker: {
+      ...VICTIM_PROFILE_AT_RISK,
+      scopesGranted: [...VICTIM_PROFILE_AT_RISK.scopesGranted],
+      authorizationCode: code,
+      stateValidated: false,
+      attackerControlledRedirect: redirectUri,
+    },
   });
 });

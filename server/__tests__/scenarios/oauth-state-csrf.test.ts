@@ -186,6 +186,60 @@ describe("Phase 2 PoC: oauth-state-csrf (orchestrator → victim-web)", () => {
     expect(steps[2].id).toBe("oauth-state-csrf-verify");
   });
 
+  it("victim 応答ボディに leakedToAttacker (token exchange 後の予定 profile) が含まれる", async () => {
+    const app = createOrchestratorApp();
+    const res = await app.request("/api/orchestrator/exec", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scenarioId: "oauth-state-csrf",
+        target: "victim-web",
+        request: {
+          method: "GET",
+          path: "/oauth/authorize?client_id=demo-app&redirect_uri=http%3A%2F%2Fattacker.example%2Fcb",
+          headers: { Accept: "application/json" },
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      data: {
+        rawExchange: {
+          orchestratorToVictim: {
+            response: { body: string | null; headers: Record<string, string> };
+          };
+        };
+      };
+    };
+    const ex = json.data.rawExchange.orchestratorToVictim;
+    const victimBody = JSON.parse(ex.response.body ?? "{}") as {
+      code: string;
+      leakedToAttacker: {
+        username: string;
+        email: string;
+        futureAccessToken: string;
+        authorizationCode: string;
+        stateValidated: boolean;
+        attackerControlledRedirect: string;
+      };
+    };
+    expect(victimBody.leakedToAttacker.username).toBe("seed_alice");
+    expect(victimBody.leakedToAttacker.email).toBe("alice@victim.local");
+    expect(victimBody.leakedToAttacker.futureAccessToken).toMatch(
+      /^VICTIM_AT_REDACTED_/,
+    );
+    expect(victimBody.leakedToAttacker.authorizationCode).toBe(victimBody.code);
+    expect(victimBody.leakedToAttacker.stateValidated).toBe(false);
+    expect(victimBody.leakedToAttacker.attackerControlledRedirect).toBe(
+      "http://attacker.example/cb",
+    );
+
+    // 教材ヒントヘッダが victim → orchestrator 経路を抜けて raw exchange に保存される
+    const headerKeys = Object.keys(ex.response.headers).map((k) => k.toLowerCase());
+    expect(headerKeys).toContain("x-authorization-code");
+    expect(headerKeys).toContain("x-csrf-risk");
+  });
+
   it("client_id / redirect_uri 欠如時は victim が 400 を返し outcome は blocked", async () => {
     const app = createOrchestratorApp();
     const res = await app.request("/api/orchestrator/exec", {

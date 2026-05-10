@@ -66,6 +66,154 @@ const decoded = jwt.verify(token, secret);  // 危険`,
       // header: {"alg":"none","typ":"JWT"}, payload: {"sub":"seed_alice","role":"admin"}
       body: '{\n  "token": "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJzZWVkX2FsaWNlIiwicm9sZSI6ImFkbWluIn0."\n}',
     },
+    // PR-A 波及: AttackStoryboard (DESIGN/35) 7 シーン story。
+    // alg=none で偽造した admin token がそのまま受理され、leakedToAttacker
+    // (alice の email / 残高 / API キー等) が一括で奪取される物語を可視化する。
+    storyDefaultDurationMs: 4000,
+    story: [
+      {
+        id: "scene-1-setup",
+        title: "Target: alice's admin endpoint",
+        titleJa: "標的: alice の管理エンドポイント",
+        actor: "attacker",
+        speech: {
+          ja: "alice の管理権限を奪う。HS256 の鍵は持っていないが、検証側を騙せばいい。",
+          en: "I want alice's admin role. I don't have the HS256 key — but I can fool the verifier.",
+        },
+        narration: {
+          ja: "攻撃者は被害者 alice の管理者権限を狙っています。alice の本物の JWT を入手していなくても、サーバの JWT 検証実装に漏れがあれば偽造が成立します。",
+          en: "The attacker wants alice's admin role. Even without her real JWT, a sloppy verifier on the server can be tricked into accepting a forgery.",
+        },
+        highlightActors: ["victim"],
+      },
+      {
+        id: "scene-2-recon",
+        title: "Inspect the JWT structure",
+        titleJa: "JWT の構造を観察",
+        actor: "attacker",
+        speech: {
+          ja: "JWT は header.payload.signature の 3 部構成。header の alg を書き換えればどうなる?",
+          en: "JWTs are header.payload.signature. What if I just rewrite alg in the header?",
+        },
+        narration: {
+          ja: "RFC 7518 §3.6 は alg=\"none\" を許容しています。algorithms 許可リストを渡さない jwt.verify() は、その「妥協」を本番環境で再現してしまうことがあります (CWE-345)。",
+          en: "RFC 7518 §3.6 permits alg=\"none\". A jwt.verify() call without an algorithms allowlist can reproduce that compromise in production (CWE-345).",
+        },
+        visual: {
+          type: "ascii",
+          content:
+            "JWT layout:\n" +
+            "  ┌─────────────┐.┌─────────────┐.┌─────────────┐\n" +
+            "  │   HEADER    │ │   PAYLOAD   │ │  SIGNATURE  │\n" +
+            "  │ alg, typ    │ │ sub, role…  │ │ HMAC bytes  │\n" +
+            "  └─────────────┘ └─────────────┘ └─────────────┘\n" +
+            "                          ↑\n" +
+            "                attacker rewrites alg → \"none\"",
+        },
+      },
+      {
+        id: "scene-3-forge",
+        title: "Forge alg=none + admin claims",
+        titleJa: "alg=none + admin claims を偽造",
+        actor: "attacker",
+        speech: {
+          ja: "header={alg:'none'}, payload={sub:'seed_alice', role:'admin'}, signature は空文字。",
+          en: "header={alg:'none'}, payload={sub:'seed_alice', role:'admin'}, signature stays empty.",
+        },
+        narration: {
+          ja: "偽造 JWT は base64url でエンコードしたヘッダ・ペイロードをドットで連結し、3 番目のセグメント (署名) を空文字列にするだけで完成します。秘密鍵は不要です。",
+          en: "The forgery is just base64url(header) . base64url(payload) . — three segments where the signature slot is empty. No secret needed.",
+        },
+        highlightActors: ["attacker"],
+      },
+      {
+        id: "scene-4-send",
+        title: "Send the forged token",
+        titleJa: "偽造トークンを送信",
+        actor: "attacker",
+        speech: {
+          ja: "RawHttpComposer 経由で orchestrator → victim-web に届ける。Host は強制的に victim-web に上書きされる。",
+          en: "Push it through orchestrator → victim-web. Orchestrator forces the Host header so I can't redirect anywhere.",
+        },
+        narration: {
+          ja: "orchestrator は VICTIM_ALLOWLIST で target を検証し、Host ヘッダを強制上書きします。攻撃者のリクエストは内部の victim-net 内に閉じ込められます (DESIGN/34 §4)。",
+          en: "Orchestrator validates target via VICTIM_ALLOWLIST and forces the Host header. The attacker's request stays inside victim-net (DESIGN/34 §4).",
+        },
+        visual: {
+          type: "http-request",
+          sourceRef: { pair: "orchestratorToVictim", side: "request", field: "line" },
+          highlight: [
+            {
+              target: "header",
+              match: "Content-Type",
+              tooltipJa: "JSON ボディとして偽造 JWT を送信",
+              tooltip: "Forged JWT delivered as JSON body",
+            },
+          ],
+        },
+      },
+      {
+        id: "scene-5-server-fails",
+        title: "Verifier accepts the forgery",
+        titleJa: "検証器が偽造を受理",
+        actor: "victim-srv",
+        speech: {
+          ja: "alg=none か。algorithms は指定されていない。じゃあ署名チェックはスキップでいいな。",
+          en: "alg=none, and no algorithms allowlist. Fine — I'll skip the signature check.",
+        },
+        narration: {
+          ja: "victim-web は jwt.verify() に algorithms を渡していないため、alg=none を素通りで受理してしまいます。レスポンスヘッダ X-Forged-Role に攻撃者が指定した role がそのまま返るのが目印です。",
+          en: "victim-web calls jwt.verify() without an algorithms list, so alg=none flies through. The X-Forged-Role response header echoes the role the attacker chose.",
+        },
+        visual: {
+          type: "data-leak",
+          label: "Forged role accepted (X-Forged-Role)",
+          labelJa: "偽造 role を受理 (X-Forged-Role)",
+          valueRef: {
+            pair: "orchestratorToVictim",
+            side: "response",
+            field: { header: "X-Forged-Role" },
+          },
+          severity: "high",
+        },
+      },
+      {
+        id: "scene-6-leak",
+        title: "Account data exfiltrated",
+        titleJa: "アカウントデータ漏えい",
+        actor: "attacker",
+        speech: {
+          ja: "alice として認証された。残高、API キー、メール…全部読める。",
+          en: "Authenticated as alice. Balance, API key, email — all readable.",
+        },
+        narration: {
+          ja: "victim-web のレスポンスボディには「攻撃者がこの偽造 token で奪取できる範囲」が leakedToAttacker フィールドに詰められています。本番ではこのまま管理 API を呼び放題になります。",
+          en: "The response body's leakedToAttacker field shows exactly what the forgery unlocks. In production this would be a free pass to admin APIs.",
+        },
+        visual: {
+          type: "data-leak",
+          label: "Response body (leakedToAttacker)",
+          labelJa: "レスポンスボディ (leakedToAttacker)",
+          valueRef: { pair: "orchestratorToVictim", side: "response", field: "body" },
+          severity: "critical",
+        },
+      },
+      {
+        id: "scene-7-defense",
+        title: "Defense: pin the algorithms allowlist",
+        titleJa: "防御: algorithms 許可リストを固定する",
+        actor: "narrator",
+        narration: {
+          ja: "堅牢実装は jwt.verify() に必ず algorithms: [\"HS256\"] のような許可リストを渡し、alg=none を含む想定外アルゴリズムを拒否します。RFC 7518 §3.6 と OWASP JWT Cheat Sheet が同等の対策を勧告しています。",
+          en: "A defended verifier always passes algorithms: [\"HS256\"] (or similar) to jwt.verify(), rejecting alg=none and any other unintended algorithm. RFC 7518 §3.6 and the OWASP JWT Cheat Sheet prescribe the same control.",
+        },
+        visual: {
+          type: "code-defense",
+          codeHintIndex: 0,
+          lineHighlight: [2, 4],
+        },
+      },
+    ],
   },
   {
     id: "jwt-weak-secret-bruteforce",
