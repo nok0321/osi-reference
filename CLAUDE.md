@@ -195,6 +195,8 @@ PR レビュー時の「仕様 ↔ 実装」往復に使う。Phase 2+ で新規
 | DESIGN/35 §4 (AttackPanel 統合) | `src/components/shared/AttackPanel.tsx` (`hasStory()` メモ + AttackStoryView 表示 + `<details>` 折りたたみの classic timeline) + `AttackPanel.css` (`.attack-classic-timeline-fold`) | 共存方式 (story 持ちは新 UI、未対応は従来 timeline 展開) |
 | DESIGN/35 §7 (raw exchange リンク方式) | `src/utils/story-resolver.ts` (`resolveRawRef` case-insensitive header lookup) + `src/utils/__tests__/story-resolver.test.ts` | 構造体参照ヘルパー |
 | DESIGN/35 §11.2-§11.6 (テスト要件) | `src/components/shared/__tests__/AttackStoryView.test.tsx` (11 cases) + `AttackStoryScene.test.tsx` (8 cases) + `src/utils/__tests__/story-resolver.test.ts` (7 cases) | UI navigation / variant 描画 / a11y / resolver helper |
+| DESIGN/35 §10.2 (PR-A 波及 — jwt-alg-none) | `src/components/auth/attacks/scenarios/jwt-scenarios.ts` (`jwt-alg-none.story` 7 シーン + `storyDefaultDurationMs`) + `services/victim-web/src/routes/jwt-vuln.ts` (`leakedToAttacker` + X-Token-Alg / X-Forged-Sub / X-Forged-Role ヘッダ + SEED_USER_PROFILES) + `services/victim-web/__tests__/jwt-vuln.test.ts` (6 tests) | 既存 PoC への storyboard + leakedToAttacker 波及 (auth プロトコル系 1/2) |
+| DESIGN/35 §10.2 (PR-A 波及 — oauth-state-csrf) | `src/components/auth/attacks/scenarios/oauth-scenarios.ts` (`oauth-state-csrf.story` 7 シーン + `storyDefaultDurationMs`) + `services/victim-web/src/routes/oauth-vuln.ts` (`leakedToAttacker` + X-Authorization-Code / X-Csrf-Risk / X-State-Validated ヘッダ + VICTIM_PROFILE_AT_RISK) + `services/victim-web/__tests__/oauth-vuln.test.ts` (+2 tests = 6 tests) + `server/__tests__/scenarios/oauth-state-csrf.test.ts` (+1 test = 5 tests) | 既存 PoC への storyboard + leakedToAttacker 波及 (auth プロトコル系 2/2) |
 
 ## ロードマップ: 攻撃デモの live 化 (Phase 1-5, 約 11 週)
 

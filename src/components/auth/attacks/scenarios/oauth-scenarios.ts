@@ -82,6 +82,162 @@ const authUrl = \`/api/oauth/authorize?client_id=demo-app&redirect_uri=\${redire
       path: "/oauth/authorize?client_id=demo-app&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Foauth%2Fcallback&scope=read&response_type=code",
       headers: { Accept: "application/json" },
     },
+    // PR-A 波及: AttackStoryboard (DESIGN/35) 7 シーン story。
+    // state 未検証で発行された認可コードを攻撃者が握り、後続の token exchange で
+    // alice の email / scope / future access token を奪取する流れを可視化する。
+    storyDefaultDurationMs: 4000,
+    story: [
+      {
+        id: "scene-1-setup",
+        title: "Target: alice's session at the OAuth client",
+        titleJa: "標的: OAuth クライアントの alice セッション",
+        actor: "attacker",
+        speech: {
+          ja: "alice の OAuth セッションに自分のコードを忍び込ませて、彼女のリソースを乗っ取る。",
+          en: "I want my own code dropped into alice's OAuth session so I can pivot to her resources.",
+        },
+        narration: {
+          ja: "OAuth state パラメータは認可リクエストとコールバックを紐付ける CSRF 防御です (RFC 6749 §10.12)。クライアントが state を発行・検証しないと、攻撃者が任意の認可コードを被害者のコールバックに注入できます (CWE-352)。",
+          en: "OAuth's state parameter binds an authorize request to its callback (RFC 6749 §10.12). Without it, an attacker can inject an arbitrary authorization code into the victim's callback (CWE-352).",
+        },
+        highlightActors: ["victim"],
+      },
+      {
+        id: "scene-2-recon",
+        title: "Inspect the authorize URL",
+        titleJa: "authorize URL を観察",
+        actor: "attacker",
+        speech: {
+          ja: "クライアントの authorize URL に state パラメータが入っていない。チャンスだ。",
+          en: "The client's authorize URL has no state parameter. That's the opening.",
+        },
+        narration: {
+          ja: "攻撃者はクライアントが組み立てる URL を観察し、state が省略されていることを確認します。state があっても sessionStorage と照合していなければ同じく脆弱です (RFC 6749 §10.12)。",
+          en: "The attacker watches the client's outgoing URL and notices state is missing. Even if state were present, it would still be vulnerable when not matched against sessionStorage (RFC 6749 §10.12).",
+        },
+        visual: {
+          type: "ascii",
+          content:
+            "Authorize URL (vulnerable client):\n" +
+            "  /oauth/authorize\n" +
+            "    ?client_id=demo-app\n" +
+            "    &redirect_uri=…/callback\n" +
+            "    &scope=read\n" +
+            "                ↑\n" +
+            "       no state= → CSRF window open",
+        },
+      },
+      {
+        id: "scene-3-victim-act",
+        title: "Victim begins the OAuth login",
+        titleJa: "被害者が OAuth ログインを開始",
+        actor: "victim",
+        speech: {
+          ja: "ログインしよう。OAuth で許可するだけだ。",
+          en: "Logging in. Just one OAuth consent click.",
+        },
+        narration: {
+          ja: "被害者 alice はクライアントの「OAuth でログイン」ボタンをクリックし、authorize エンドポイントにリダイレクトされる流れを起動します。state がないため、攻撃者の事前リクエストがそのまま被害者のセッションに紛れ込みます。",
+          en: "alice clicks the client's 'Sign in with OAuth' button. With no state, the attacker's pre-fetched code can be slipped into her session.",
+        },
+        visual: {
+          type: "sequence-arrow",
+          from: "victim",
+          to: "victim-srv",
+          label: "GET /oauth/authorize (no state)",
+          labelJa: "GET /oauth/authorize (state なし)",
+          direction: "request",
+        },
+        highlightActors: ["victim-srv"],
+      },
+      {
+        id: "scene-4-exploit",
+        title: "Attacker pre-fetches an authorization code",
+        titleJa: "攻撃者が事前に認可コードを取得",
+        actor: "attacker",
+        speech: {
+          ja: "RawHttpComposer から state なしで /oauth/authorize を叩く。code がそのまま返ってくる。",
+          en: "Send /oauth/authorize from RawHttpComposer with no state. The code drops straight back.",
+        },
+        narration: {
+          ja: "orchestrator/exec 経由で state を持たない authorize リクエストを送ると、victim-web は何の検証もせず認可コードを発行します。攻撃者はこのコードを被害者の callback URL に流し込めば、被害者のセッションが攻撃者アカウントに紐付きます。",
+          en: "Sent through orchestrator/exec without a state, victim-web issues an authorization code with no checks. Smuggle that code into the victim's callback URL and her session gets bound to the attacker's account.",
+        },
+        visual: {
+          type: "http-request",
+          sourceRef: { pair: "orchestratorToVictim", side: "request", field: "line" },
+          highlight: [
+            {
+              target: "header",
+              match: "Accept",
+              tooltipJa: "JSON 応答を要求",
+              tooltip: "Requesting a JSON response",
+            },
+          ],
+        },
+      },
+      {
+        id: "scene-5-server-fails",
+        title: "Server issues a code without checking state",
+        titleJa: "サーバが state を検証せず code を発行",
+        actor: "victim-srv",
+        speech: {
+          ja: "client_id と redirect_uri はある。state? まあ任意だし、code を発行してしまおう。",
+          en: "client_id and redirect_uri look fine. state? It's optional anyway — here's a fresh code.",
+        },
+        narration: {
+          ja: "victim-web は state パラメータを完全に無視して認可コードを発行します。レスポンスヘッダ X-Csrf-Risk: high と X-State-Validated: false が「これは検証なしで発行された code」であることをマークしています。",
+          en: "victim-web ignores state entirely and issues a code. The response headers X-Csrf-Risk: high and X-State-Validated: false flag the code as having been issued without validation.",
+        },
+        visual: {
+          type: "data-leak",
+          label: "CSRF risk header (X-Csrf-Risk)",
+          labelJa: "CSRF リスクヘッダ (X-Csrf-Risk)",
+          valueRef: {
+            pair: "orchestratorToVictim",
+            side: "response",
+            field: { header: "X-Csrf-Risk" },
+          },
+          severity: "high",
+        },
+      },
+      {
+        id: "scene-6-leak",
+        title: "Token exchange will hand alice's data over",
+        titleJa: "後続の token 交換で alice のデータが奪われる",
+        actor: "attacker",
+        speech: {
+          ja: "code を持ったから、次の /oauth/token でアクセストークンと alice のプロファイルが手に入る。",
+          en: "I have the code. The next /oauth/token call will hand me alice's access token and profile.",
+        },
+        narration: {
+          ja: "victim-web は教材のため leakedToAttacker フィールドに「この code を token endpoint に渡せば取れる予定の alice profile + futureAccessToken」を一括で入れて返します。本番環境ではここから別 API コールで段階的に漏えいします。",
+          en: "For teaching purposes victim-web bundles 'what the next /oauth/token call would unlock' (alice's profile + futureAccessToken) into leakedToAttacker. In production it would leak step by step.",
+        },
+        visual: {
+          type: "data-leak",
+          label: "Response body (leakedToAttacker)",
+          labelJa: "レスポンスボディ (leakedToAttacker)",
+          valueRef: { pair: "orchestratorToVictim", side: "response", field: "body" },
+          severity: "critical",
+        },
+      },
+      {
+        id: "scene-7-defense",
+        title: "Defense: bind state to the session and verify on callback",
+        titleJa: "防御: state をセッションに結び付けてコールバックで照合する",
+        actor: "narrator",
+        narration: {
+          ja: "堅牢実装は authorize リクエスト前に暗号学的乱数 state を生成して sessionStorage に保存し、コールバック受信時に厳密に照合します (RFC 6749 §10.12 / OWASP CSRF Cheat Sheet)。",
+          en: "A defended client generates a cryptographically random state, stores it in sessionStorage before the authorize request, and matches it strictly on callback (RFC 6749 §10.12 / OWASP CSRF Cheat Sheet).",
+        },
+        visual: {
+          type: "code-defense",
+          codeHintIndex: 0,
+          lineHighlight: [2, 9],
+        },
+      },
+    ],
   },
   {
     id: "oauth-redirect-uri-bypass",

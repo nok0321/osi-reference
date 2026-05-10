@@ -82,4 +82,49 @@ describe("victim-web: GET /oauth/authorize (CWE-352 oauth-state-csrf)", () => {
     expect(json.ok).toBe(false);
     expect(json.error).toContain("redirect_uri");
   });
+
+  it("成功レスポンスに leakedToAttacker (token exchange 後に奪取される profile) が含まれる", async () => {
+    const app = createApp();
+    const res = await app.request(
+      "/oauth/authorize?client_id=demo-app&redirect_uri=http%3A%2F%2Fattacker.example%2Fcb",
+      { method: "GET" },
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      code: string;
+      leakedToAttacker: {
+        userId: number;
+        username: string;
+        email: string;
+        scopesGranted: string[];
+        futureAccessToken: string;
+        authorizationCode: string;
+        stateValidated: boolean;
+        attackerControlledRedirect: string;
+      };
+    };
+    expect(json.leakedToAttacker.username).toBe("seed_alice");
+    expect(json.leakedToAttacker.email).toBe("alice@victim.local");
+    expect(json.leakedToAttacker.futureAccessToken).toMatch(/^VICTIM_AT_REDACTED_/);
+    expect(json.leakedToAttacker.scopesGranted).toContain("read");
+    // authorizationCode はレスポンス本体の code と一致
+    expect(json.leakedToAttacker.authorizationCode).toBe(json.code);
+    expect(json.leakedToAttacker.stateValidated).toBe(false);
+    expect(json.leakedToAttacker.attackerControlledRedirect).toBe(
+      "http://attacker.example/cb",
+    );
+  });
+
+  it("教材ヒントヘッダ X-Authorization-Code / X-Csrf-Risk / X-State-Validated を返す", async () => {
+    const app = createApp();
+    const res = await app.request(
+      "/oauth/authorize?client_id=demo-app&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fcallback",
+      { method: "GET" },
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { code: string };
+    expect(res.headers.get("X-Authorization-Code")).toBe(json.code);
+    expect(res.headers.get("X-Csrf-Risk")).toBe("high");
+    expect(res.headers.get("X-State-Validated")).toBe("false");
+  });
 });
