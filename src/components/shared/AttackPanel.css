@@ -109,3 +109,35 @@
   font-size: 0.78rem;
   padding: 8px 12px;
 }
+
+/* AttackStoryView 統合エリア (DESIGN/35 §4.2 step 5) */
+.attack-panel-storyboard {
+  margin-top: 4px;
+}
+
+/* 既存 AttackStepTimeline を story 持ちシナリオでは折りたたみ表示 (DESIGN/35 §4.2 step 6) */
+.attack-classic-timeline-fold {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  padding: 6px 10px;
+}
+
+.attack-classic-timeline-summary {
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  user-select: none;
+  padding: 2px 0;
+}
+
+.attack-classic-timeline-summary:hover {
+  color: var(--glow-color);
+}
+
+.attack-classic-timeline-fold[open] .attack-classic-timeline-summary {
+  margin-bottom: 8px;
+  border-bottom: 1px dashed var(--border-subtle);
+  color: var(--text-secondary);
+}

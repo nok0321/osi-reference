@@ -439,6 +439,80 @@ export interface AttackResult<TExtra = Record<string, never>> {
   extra?: TExtra;
 }
 
+/* ── Attack Storyboard (DESIGN/35) ── */
+
+/**
+ * シナリオ物語の登場人物。emoji avatar とハイライト色の選択に使う。
+ * StoryActorAvatar 以外のコンポーネントへの emoji 使用波及は禁止 (DESIGN/35 §9.5)。
+ */
+export type AttackStoryActor =
+  | "attacker"
+  | "victim"
+  | "server"
+  | "victim-srv"
+  | "narrator"
+  | "system";
+
+/** RawExchange 内の特定フィールドへの安定参照 (DESIGN/35 §7)。 */
+export interface RawExchangeRef {
+  pair: "browserToOrchestrator" | "orchestratorToVictim";
+  side: "request" | "response";
+  /** "line" | "body" | { header: string }。header は case-insensitive。 */
+  field: "line" | "body" | { header: string };
+}
+
+/** http-request / http-response visual 内の強調指示。 */
+export interface HttpHighlight {
+  target: "header" | "body-fragment" | "status";
+  /** ヘッダ名 or 検索文字列 */
+  match: string;
+  tooltipJa?: string;
+  tooltip?: string;
+}
+
+/**
+ * シーンの中央エリアに描画するビジュアル要素。タグ付きユニオン (DESIGN/35 §2.2)。
+ * raw exchange 不在時は visual を fallback 表示 (label のみ + プレースホルダ "—")。
+ */
+export type AttackStoryVisual =
+  | { type: "http-request"; sourceRef: RawExchangeRef; highlight?: HttpHighlight[] }
+  | { type: "http-response"; sourceRef: RawExchangeRef; highlight?: HttpHighlight[] }
+  | {
+      type: "data-leak";
+      label: string;
+      labelJa: string;
+      valueRef: RawExchangeRef;
+      severity?: "info" | "high" | "critical";
+    }
+  | { type: "code-defense"; codeHintIndex: number; lineHighlight?: [number, number] }
+  | {
+      type: "sequence-arrow";
+      from: AttackStoryActor;
+      to: AttackStoryActor;
+      label: string;
+      labelJa: string;
+      direction: "request" | "response";
+    }
+  | { type: "ascii"; content: string };
+
+/** 攻撃シナリオの 1 シーン (紙芝居の 1 ページ)。 */
+export interface AttackStoryScene {
+  /** story 配列内ユニーク。テスト・キーボード遷移で使用 */
+  id: string;
+  title: string;
+  titleJa: string;
+  actor: AttackStoryActor;
+  /** キャラ吹き出し (一人称・常体)。null=純ナレーション */
+  speech?: { ja: string; en: string } | null;
+  /** 第三者ナレーション (敬体)。シーン下部に表示 */
+  narration?: { ja: string; en: string } | null;
+  visual?: AttackStoryVisual;
+  /** 同時にハイライトする他アクター */
+  highlightActors?: AttackStoryActor[];
+  /** auto-play 時の表示時間 (ms)。未指定は story 全体のデフォルト */
+  durationMs?: number;
+}
+
 /**
  * 攻撃シナリオのメタ情報。
  * tabId は src/types/security.ts の AuthSubView 型と一致させる (循環参照回避のため string)。
@@ -499,6 +573,15 @@ export interface AttackScenarioMeta {
     headers?: Record<string, string>;
     body?: string;
   };
+
+  /**
+   * 紙芝居型物語シーン (DESIGN/35)。未指定/空配列のシナリオは AttackStoryView を非表示。
+   * 指定時は AttackPanel 内で classic timeline と共存表示される (DESIGN/35 §4.2)。
+   */
+  story?: AttackStoryScene[];
+
+  /** auto-play デフォルト ms (省略時 3000)。シナリオ単位で上書き可能 (DESIGN/35 §5.2)。 */
+  storyDefaultDurationMs?: number;
 }
 
 /* ── Live Attack: Orchestrator API (DESIGN/31) ── */

@@ -1,0 +1,473 @@
+/* ── AttackStoryScene (DESIGN/35 §3, §9) ── */
+
+.story-scene {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.story-scene-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.story-scene-title {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+/* ── アクター列 ── */
+.story-scene-actors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 8px 4px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.story-scene-actor-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 90px;
+  position: relative;
+  transition: opacity var(--transition-fast);
+}
+
+.story-scene-actor-cell[data-active="false"] {
+  opacity: 0.35;
+}
+
+.story-scene-actor-cell[data-primary="true"] {
+  flex: 0 0 auto;
+}
+
+/* ── 吹き出し ── */
+.story-scene-speech-bubble {
+  position: relative;
+  max-width: 240px;
+  padding: 10px 12px;
+  background: var(--bg-card-hover);
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  line-height: 1.45;
+  margin-top: 6px;
+  word-break: break-word;
+}
+
+.story-scene-speech-bubble::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: 24px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 8px solid var(--border-active);
+}
+
+.story-scene-speech-bubble[data-actor="attacker"] {
+  border-color: var(--color-attack-accent-border);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.story-scene-speech-bubble[data-actor="attacker"]::before {
+  border-bottom-color: var(--color-attack-accent-border);
+}
+
+.story-scene-speech-bubble[data-actor="victim"] {
+  border-color: var(--color-info-strong);
+}
+
+.story-scene-speech-bubble[data-actor="victim"]::before {
+  border-bottom-color: var(--color-info-strong);
+}
+
+.story-scene-speech-bubble[data-actor="server"],
+.story-scene-speech-bubble[data-actor="victim-srv"] {
+  border-color: var(--color-success-border);
+}
+
+.story-scene-speech-bubble[data-actor="server"]::before,
+.story-scene-speech-bubble[data-actor="victim-srv"]::before {
+  border-bottom-color: var(--color-success-border);
+}
+
+/* ── ナレーション ── */
+.story-scene-narration {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border-left: 3px solid var(--text-muted);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ── ビジュアル領域 ── */
+.story-scene-visual {
+  padding: 10px;
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+/* ── http-request / http-response ── */
+.story-visual-http {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.story-visual-http-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.story-visual-http[data-kind="request"] .story-visual-http-label {
+  color: var(--color-attack-accent);
+}
+
+.story-visual-http[data-kind="response"] .story-visual-http-label {
+  color: var(--color-success);
+}
+
+.story-visual-http-line {
+  margin: 0;
+  padding: 6px 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.story-visual-http-fallback {
+  padding: 10px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-align: center;
+  font-style: italic;
+}
+
+.story-visual-http-highlights {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.story-visual-http-highlight {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  padding: 4px 8px;
+  background: var(--color-attack-accent-dim);
+  border-left: 3px solid var(--color-attack-accent);
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+}
+
+.story-visual-http-highlight-label {
+  color: var(--color-attack-accent);
+  font-weight: 700;
+}
+
+.story-visual-http-highlight-value {
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.story-visual-http-highlight-tip {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.story-visual-http-body {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+}
+
+.story-visual-http-body-summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  color: var(--glow-color);
+  font-family: var(--font-mono);
+}
+
+.story-visual-http-body-summary:hover {
+  text-decoration: underline;
+}
+
+.story-visual-http-body-content {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* ── data-leak ── */
+.story-visual-data-leak {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  background: var(--color-attack-accent-dim);
+  border: 2px solid var(--color-attack-accent);
+  border-radius: var(--radius-md);
+}
+
+.story-visual-data-leak[data-severity="critical"] {
+  animation: storyLeakPulse 1.4s ease-in-out infinite;
+}
+
+.story-visual-data-leak[data-severity="info"] {
+  background: var(--color-info-light);
+  border-color: var(--color-info);
+}
+
+.story-visual-data-leak-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.story-visual-data-leak-value {
+  font-size: 0.95rem;
+  color: var(--color-attack-accent);
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.story-visual-data-leak[data-severity="info"] .story-visual-data-leak-value {
+  color: var(--color-info);
+}
+
+.story-visual-data-leak-fallback {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+@keyframes storyLeakPulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--color-attack-accent-dim); }
+  50% { box-shadow: 0 0 0 8px transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .story-visual-data-leak[data-severity="critical"] {
+    animation: none;
+  }
+}
+
+/* ── code-defense ── */
+.story-visual-code-defense {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.story-visual-code-defense-label {
+  font-size: 0.78rem;
+  color: var(--color-success);
+  font-weight: 700;
+}
+
+.story-visual-code-defense-lang {
+  margin-left: 6px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.story-visual-code-defense-code {
+  margin: 0;
+  padding: 8px 0;
+  background: var(--bg-card);
+  border: 1px solid var(--color-success-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.74rem;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.story-visual-code-defense-line {
+  display: flex;
+  gap: 10px;
+  padding: 1px 8px;
+}
+
+.story-visual-code-defense-line[data-highlight="true"] {
+  background: var(--color-success-light);
+  border-left: 3px solid var(--color-success);
+  padding-left: 5px;
+}
+
+.story-visual-code-defense-line-num {
+  color: var(--text-muted);
+  user-select: none;
+  min-width: 22px;
+  text-align: right;
+}
+
+.story-visual-code-defense-line-text {
+  color: var(--text-primary);
+  white-space: pre;
+}
+
+.story-visual-code-defense-empty {
+  padding: 10px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+}
+
+/* ── sequence-arrow ── */
+.story-visual-sequence-arrow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px;
+}
+
+.story-visual-sequence-arrow-line {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.story-visual-sequence-arrow-label {
+  font-size: 0.78rem;
+  color: var(--text-primary);
+}
+
+.story-visual-sequence-arrow-shaft {
+  font-size: 1.2rem;
+  color: var(--glow-color);
+  letter-spacing: -2px;
+}
+
+.story-visual-sequence-arrow[data-direction="response"] .story-visual-sequence-arrow-shaft {
+  color: var(--color-success);
+}
+
+/* ── ascii ── */
+.story-visual-ascii {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  white-space: pre;
+  overflow-x: auto;
+}
+
+/* ── StoryActorAvatar (内部用、本ファイルで co-located) ── */
+.story-actor-avatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 80px;
+  padding: 6px 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.story-actor-avatar[data-active="true"] {
+  border-color: var(--actor-color, var(--glow-color));
+  box-shadow: 0 0 12px var(--actor-color-dim, var(--glow-color-dim));
+}
+
+.story-actor-avatar[data-actor="attacker"] {
+  --actor-color: var(--color-attack-accent);
+  --actor-color-dim: var(--color-attack-accent-dim);
+}
+
+.story-actor-avatar[data-actor="victim"] {
+  --actor-color: var(--color-info);
+  --actor-color-dim: var(--color-info-light);
+}
+
+.story-actor-avatar[data-actor="server"] {
+  --actor-color: var(--color-success);
+  --actor-color-dim: var(--color-success-dim);
+}
+
+.story-actor-avatar[data-actor="victim-srv"] {
+  --actor-color: var(--color-attack-accent);
+  --actor-color-dim: var(--color-attack-accent-dim);
+}
+
+.story-actor-avatar[data-actor="narrator"] {
+  --actor-color: var(--text-muted);
+  --actor-color-dim: rgba(85, 102, 119, 0.2);
+}
+
+.story-actor-avatar[data-actor="system"] {
+  --actor-color: var(--glow-color);
+  --actor-color-dim: var(--glow-color-dim);
+}
+
+.story-actor-emoji {
+  font-size: 1.6rem;
+  line-height: 1;
+  text-align: center;
+}
+
+.story-actor-name {
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.story-actor-avatar[data-active="true"] .story-actor-name {
+  color: var(--actor-color);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .story-actor-avatar {
+    transition: none;
+  }
+  .story-scene-actor-cell {
+    transition: none;
+  }
+}

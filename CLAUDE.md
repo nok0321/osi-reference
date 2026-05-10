@@ -186,6 +186,15 @@ PR レビュー時の「仕様 ↔ 実装」往復に使う。Phase 2+ で新規
 | DESIGN/30 §5.3 (Phase 2 PoC 第 2 号) | `src/components/auth/attacks/scenarios/oauth-scenarios.ts` (`oauth-state-csrf` の `mode: "live"`) + `src/components/auth/OAuthFlow.tsx` (`onRunLiveScenario` 配線) | 学習者検証経路 |
 | DESIGN/30 §5.3 (Phase 2 PoC 第 3 号) | `src/components/auth/attacks/scenarios/rbac-scenarios.ts` (`rbac-idor` の `mode: "live"`) + `src/components/auth/PermissionModel.tsx` (`onRunLiveScenario` 配線) | 学習者検証経路 |
 | DESIGN/30 §5.3 (Phase 2 PoC 第 4 号) | `src/components/auth/attacks/scenarios/session-token-scenarios.ts` (`session-fixation` の `mode: "live"`) + `src/components/auth/AuthComparison.tsx` (`onRunLiveScenario` 配線) | 学習者検証経路 |
+| DESIGN/32 §4.7 (TOTP 脆弱エンドポイント) | `services/victim-web/src/routes/totp-vuln.ts` + `services/victim-web/src/utils/totp.ts` | `POST /totp/login-replay` (used_otps 記録なしで同一 OTP 2 連続認証 + leakedToAttacker 漏えい体験) |
+| DESIGN/32 §8.1 (victim 単体テスト) | `services/victim-web/__tests__/totp-vuln.test.ts` | TOTP: 同一 OTP 2 連続認証 / secret 学習者上書き / 不在 user 401 / username 欠如 400 / invalid JSON 400 |
+| DESIGN/30 §5.3 (シナリオ e2e — mfa-otp-replay) | `server/__tests__/scenarios/mfa-otp-replay.test.ts` | mfa-otp-replay: orchestrator → victim-web で 200 / X-Computed-OTP ヘッダ / leakedToAttacker / 3 段 AttackStep / ghost user → blocked |
+| DESIGN/30 §5.3 (Phase 2 PoC 第 5 号 = Phase 2 完結) | `src/components/auth/attacks/scenarios/mfa-scenarios.ts` (`mfa-otp-replay` の `mode: "live"` + 7 シーン story) + `src/components/auth/MfaFlow.tsx` (`onRunLiveScenario` 配線) | 学習者検証経路 + 紙芝居化 |
+| DESIGN/35 §2 (AttackStoryScene 型) | `shared/api-types.ts` (`AttackStoryScene`, `AttackStoryActor`, `AttackStoryVisual`, `RawExchangeRef`, `HttpHighlight`) + `AttackScenarioMeta.story?` 追加 | 紙芝居データモデル |
+| DESIGN/35 §3 (UI コンポーネント分割) | `src/components/shared/AttackStoryView.{tsx,css}` + `AttackStoryScene.{tsx,css}` + `AttackStoryControls.{tsx,css}` + `StoryActorAvatar.tsx` | 統合コンテナ + シーン描画 + ナビ + キャラアバター |
+| DESIGN/35 §4 (AttackPanel 統合) | `src/components/shared/AttackPanel.tsx` (`hasStory()` メモ + AttackStoryView 表示 + `<details>` 折りたたみの classic timeline) + `AttackPanel.css` (`.attack-classic-timeline-fold`) | 共存方式 (story 持ちは新 UI、未対応は従来 timeline 展開) |
+| DESIGN/35 §7 (raw exchange リンク方式) | `src/utils/story-resolver.ts` (`resolveRawRef` case-insensitive header lookup) + `src/utils/__tests__/story-resolver.test.ts` | 構造体参照ヘルパー |
+| DESIGN/35 §11.2-§11.6 (テスト要件) | `src/components/shared/__tests__/AttackStoryView.test.tsx` (11 cases) + `AttackStoryScene.test.tsx` (8 cases) + `src/utils/__tests__/story-resolver.test.ts` (7 cases) | UI navigation / variant 描画 / a11y / resolver helper |
 
 ## ロードマップ: 攻撃デモの live 化 (Phase 1-5, 約 11 週)
 

@@ -1,0 +1,101 @@
+.story-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  user-select: none;
+}
+
+.story-controls-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.story-controls-btn:hover:not(:disabled) {
+  border-color: var(--glow-color);
+  color: var(--glow-color);
+  box-shadow: 0 0 8px var(--glow-color-dim);
+}
+
+.story-controls-btn:focus-visible {
+  outline: 2px solid var(--glow-color);
+  outline-offset: 2px;
+}
+
+.story-controls-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.story-controls-autoplay[data-on="true"] {
+  border-color: var(--color-attack-accent);
+  color: var(--color-attack-accent);
+  box-shadow: 0 0 8px var(--color-attack-accent-dim);
+}
+
+.story-controls-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0.25rem;
+}
+
+.story-controls-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  padding: 0;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.story-controls-dot:hover {
+  border-color: var(--glow-color);
+}
+
+.story-controls-dot[data-past="true"] {
+  background: var(--glow-color-dim);
+  border-color: var(--glow-color);
+}
+
+.story-controls-dot[data-active="true"] {
+  background: var(--color-attack-accent);
+  border-color: var(--color-attack-accent);
+  width: 12px;
+  height: 12px;
+  box-shadow: 0 0 8px var(--color-attack-accent-dim);
+}
+
+.story-controls-dot:focus-visible {
+  outline: 2px solid var(--glow-color);
+  outline-offset: 3px;
+}
+
+.story-controls-position {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  min-width: 80px;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .story-controls-btn,
+  .story-controls-dot {
+    transition: none;
+  }
+}
