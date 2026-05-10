@@ -88,6 +88,25 @@ app.post("/login", async (c) => {
         kind: "defensive",
       },
     ],
+    // Phase 2 PoC: live attack 化された 4 件目のシナリオ。
+    // 学習者は Cookie の `session_id=ATTACKER_KNOWN_SID_v1` を任意値に書き換えて、
+    // vulnerable victim が認証成功後も同じ SID を Set-Cookie で echo することを観察できる。
+    // 堅牢実装側 (server/routes/session-auth.ts) では認証成功時に uuidv4() で新規 SID を発行する。
+    mode: "live",
+    liveTemplate: {
+      target: "victim-web",
+      method: "POST",
+      path: "/session/login",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        // 攻撃者が事前に知る固定 SID。Cookie ヘッダで送ると、vulnerable victim は
+        // ログイン成功後もこの SID を再利用 (Set-Cookie で echo) するため、
+        // 攻撃者が同じ SID で被害者になりすませる状態が成立する。
+        Cookie: "session_id=ATTACKER_KNOWN_SID_v1",
+      },
+      body: JSON.stringify({ username: "seed_alice" }),
+    },
   },
   {
     id: "session-xss-cookie-theft",
