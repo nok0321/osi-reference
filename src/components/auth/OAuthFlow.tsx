@@ -11,7 +11,7 @@ import ViewModeToggle from "../shared/ViewModeToggle";
 import AttackPanel from "../shared/AttackPanel";
 import { getViewMode } from "../../state/attack-state";
 import { oauthScenarios } from "./attacks/scenarios/oauth-scenarios";
-import type { AttackResult } from "../../../shared/api-types";
+import type { AttackResult, OrchestratorExecResponse } from "../../../shared/api-types";
 import "./OAuthFlow.css";
 
 const SCOPE = "oauth-flow";
@@ -349,6 +349,7 @@ export default function OAuthFlow() {
         <AttackPanel
           tabId="oauth"
           scenarios={oauthScenarios}
+          allowedTargets={["victim-web"]}
           onRunScenario={async (s) => {
             const suffix = s.id.replace(/^oauth-/, "");
             // E-2: 両モード並列実行のため body は不要 (空オブジェクト)
@@ -366,6 +367,46 @@ export default function OAuthFlow() {
                 steps: [],
                 summaryJa: res.error ?? "実行エラーが発生しました",
                 summary: res.error ?? "Execution error occurred",
+              };
+            }
+            return res.data;
+          }}
+          onRunLiveScenario={async (s, payload) => {
+            const res = await apiPost<OrchestratorExecResponse>(
+              "/api/orchestrator/exec",
+              {
+                scenarioId: s.id,
+                target: payload.target,
+                request: payload.request,
+              },
+              "attack-oauth"
+            );
+            if (!res.data) {
+              const errMsg = res.error ?? "Execution error";
+              const friendlyJa =
+                errMsg === "victim_unreachable"
+                  ? "victim-web が起動していません。docker compose up -d victim-web または npm run dev:victim を実行してください。"
+                  : errMsg === "live_attack_disabled_in_production"
+                  ? "live モードは production 環境では無効です。"
+                  : errMsg === "phase_not_reached"
+                  ? "このシナリオは現在の Phase ではまだ live 化されていません。"
+                  : `実行エラー: ${errMsg}`;
+              const friendlyEn =
+                errMsg === "victim_unreachable"
+                  ? "victim-web is not reachable. Start it with `docker compose up -d victim-web` or `npm run dev:victim`."
+                  : errMsg === "live_attack_disabled_in_production"
+                  ? "Live mode is disabled in production."
+                  : errMsg === "phase_not_reached"
+                  ? "This scenario is not yet live in the current phase."
+                  : `Execution error: ${errMsg}`;
+              return {
+                scenarioId: s.id,
+                outcome: "error" as const,
+                startedAt: Date.now(),
+                finishedAt: Date.now(),
+                steps: [],
+                summaryJa: friendlyJa,
+                summary: friendlyEn,
               };
             }
             return res.data;

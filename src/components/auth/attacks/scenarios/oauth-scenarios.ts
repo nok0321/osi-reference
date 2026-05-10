@@ -70,6 +70,18 @@ const authUrl = \`/api/oauth/authorize?client_id=demo-app&redirect_uri=\${redire
         kind: "defensive",
       },
     ],
+    // Phase 2 PoC: live attack 化された 2 件目のシナリオ。
+    // 学習者は state パラメータを付け外しして 200/400 の差異を観察できる。
+    mode: "live",
+    liveTemplate: {
+      target: "victim-web",
+      method: "GET",
+      // 注: state パラメータが意図的に省略されている。学習者は state を付与すると
+      // 攻撃が緩和される動作差異を観察できる (堅牢実装側 server/routes/oauth-sim.ts は
+      // state 必須なので 400 を返すが、victim-web は脆弱で state なしでも 200 を返す)。
+      path: "/oauth/authorize?client_id=demo-app&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Foauth%2Fcallback&scope=read&response_type=code",
+      headers: { Accept: "application/json" },
+    },
   },
   {
     id: "oauth-redirect-uri-bypass",
