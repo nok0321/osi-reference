@@ -11,3 +11,7 @@ secret:
   # Test files contain stub credentials (e.g. TEST_PW) that are not real secrets.
   ignored-paths:
     - "server/__tests__/**"
+    # services/victim-web/ contains intentional weak secrets (e.g. WEAK_SECRET = "secret",
+    # vuln-code-* fixtures, demo OAuth client ids/passwords) used to demonstrate why
+    # the corresponding defense in server/routes/*.ts is necessary. These are not real credentials.
+    - "services/victim-web/**"

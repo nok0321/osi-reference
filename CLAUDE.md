@@ -166,6 +166,7 @@ PR レビュー時の「仕様 ↔ 実装」往復に使う。Phase 2+ で新規
 | DESIGN/31 §8 (Production guard) | `server/middleware/production-guard.ts` | `NODE_ENV==="production"` で 503 |
 | DESIGN/32 §2 (services/victim-web 構造) | `services/victim-web/{package.json,tsconfig.json,Dockerfile,src/index.ts,src/routes/jwt-vuln.ts}` | 脆弱 victim アプリ |
 | DESIGN/32 §4.1 (JWT 脆弱エンドポイント) | `services/victim-web/src/routes/jwt-vuln.ts` | `POST /jwt/verify` (alg=none 受理) |
+| DESIGN/32 §4.4 (OAuth 脆弱エンドポイント) | `services/victim-web/src/routes/oauth-vuln.ts` | `GET /oauth/authorize` (state 未検証で code 発行) |
 | DESIGN/32 §6 (Dockerfile + compose 安全設定) | `services/victim-web/Dockerfile`, `docker-compose.yml` (victim-web セクション) | tmpfs / cap_drop / read_only |
 | DESIGN/33 §2 (RawHttpComposer) | `src/components/shared/RawHttpComposer.tsx`, `RawHttpComposer.css` (Headers / Body / Raw タブ) | 生 HTTP リクエスト編集 UI |
 | DESIGN/33 §3 (SequenceDiagramView) | `src/components/shared/SequenceDiagramView.tsx`, `SequenceDiagramView.css` | D3 SVG シーケンス図 + raw bytes ポップアップ |
@@ -175,9 +176,12 @@ PR レビュー時の「仕様 ↔ 実装」往復に使う。Phase 2+ で新規
 | DESIGN/34 §6 (PR テンプレート) | `.github/pull_request_template.md` | live モード PR チェックリスト |
 | DESIGN/30 §7.2 (CI Docker) | `.github/workflows/ci.yml` の `docker-smoke` job | victim-web image build + healthcheck + /jwt/verify smoke |
 | DESIGN/31 §11 (テスト要件) | `server/__tests__/orchestrator-live.test.ts` (12 tests = 10 spec + 2 extra) | スキーマ違反 / target 不在 / 502 / 504 / production / Host 強制 / mode / victimNote / phase ガード |
+| DESIGN/32 §8.1 (victim 単体テスト) | `services/victim-web/__tests__/oauth-vuln.test.ts` | state なし code 発行 / state echo / client_id 欠如 400 |
+| DESIGN/30 §5.3 (シナリオ e2e) | `server/__tests__/scenarios/oauth-state-csrf.test.ts` | orchestrator → victim-web で 200 / state echo / 3 段 AttackStep / 400 → blocked |
 | DESIGN/34 §4 (新規安全装置) | `victim-net: internal: true`, `productionGuard`, `Host` 強制上書き, `cap_drop`, `read_only`, `tmpfs` | OS レイヤ防御 |
 | DESIGN/30 §6.2 (`mode` フィールド) | `shared/api-types.ts` (`AttackScenarioMeta.mode`, `liveTemplate`) | live/narration 切替 |
 | DESIGN/30 §5.3 (Phase 2 PoC 第 1 号) | `src/components/auth/attacks/scenarios/jwt-scenarios.ts` (`jwt-alg-none` の `mode: "live"`) + `src/components/auth/JwtInspector.tsx` (`onRunLiveScenario` 配線) | 学習者検証経路 |
+| DESIGN/30 §5.3 (Phase 2 PoC 第 2 号) | `src/components/auth/attacks/scenarios/oauth-scenarios.ts` (`oauth-state-csrf` の `mode: "live"`) + `src/components/auth/OAuthFlow.tsx` (`onRunLiveScenario` 配線) | 学習者検証経路 |
 
 ## ロードマップ: 攻撃デモの live 化 (Phase 1-5, 約 11 週)
 
