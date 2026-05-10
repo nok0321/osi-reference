@@ -1,4 +1,4 @@
-import { createSignal, createEffect, Show, For } from "solid-js";
+import { createSignal, createEffect, createMemo, Show, For } from "solid-js";
 import { useI18n } from "../../i18n/context";
 import type {
   AttackScenarioMeta,
@@ -14,6 +14,7 @@ import AttackScenarioSelector from "./AttackScenarioSelector";
 import AttackStepTimeline from "./AttackStepTimeline";
 import AttackResultBanner from "./AttackResultBanner";
 import AttackDefensePanel from "./AttackDefensePanel";
+import AttackStoryView from "./AttackStoryView";
 import DataFlowPanel from "./DataFlowPanel";
 import RawHttpComposer from "./RawHttpComposer";
 import "./AttackPanel.css";
@@ -56,6 +57,8 @@ function AttackPanel(props: AttackPanelProps) {
   const isLiveMode = () => selectedScenario()?.mode === "live";
   const allowedTargets = (): VictimTarget[] =>
     props.allowedTargets ?? ["victim-web"];
+
+  const hasStory = createMemo(() => (selectedScenario()?.story?.length ?? 0) > 0);
 
   /* scenarios が変化したとき selectedId が無効/空なら最初のシナリオに同期 */
   createEffect(() => {
@@ -194,16 +197,44 @@ function AttackPanel(props: AttackPanelProps) {
           </div>
         </Show>
 
-        <div class="attack-panel-body">
-          {/* 5. タイムライン */}
-          <div class="attack-panel-timeline">
-            <AttackStepTimeline
-              steps={attackResult()?.steps ?? []}
-              running={running()}
+        {/* 5. ★NEW★ 攻撃ストーリーボード (DESIGN/35) — story 持ち + 結果あり時のみ表示 */}
+        <Show when={hasStory() && attackResult() !== null}>
+          <div class="attack-panel-storyboard">
+            <AttackStoryView
+              story={selectedScenario()!.story!}
+              rawExchange={rawExchange()}
+              codeHints={selectedScenario()!.codeHints}
+              defaultDurationMs={selectedScenario()!.storyDefaultDurationMs}
+              resetKey={selectedScenario()!.id}
             />
           </div>
+        </Show>
 
-          {/* 6. 防御策パネル */}
+        <div class="attack-panel-body">
+          {/* 6. タイムライン (story 持ちシナリオは折りたたみ、未対応シナリオは展開) */}
+          <div class="attack-panel-timeline">
+            <Show
+              when={hasStory()}
+              fallback={
+                <AttackStepTimeline
+                  steps={attackResult()?.steps ?? []}
+                  running={running()}
+                />
+              }
+            >
+              <details class="attack-classic-timeline-fold">
+                <summary class="attack-classic-timeline-summary">
+                  {t("詳細ステップを見る (probe / exploit / verify)", "Show detailed steps (probe / exploit / verify)")}
+                </summary>
+                <AttackStepTimeline
+                  steps={attackResult()?.steps ?? []}
+                  running={running()}
+                />
+              </details>
+            </Show>
+          </div>
+
+          {/* 7. 防御策パネル */}
           <div class="attack-panel-defense">
             <AttackDefensePanel
               scenario={selectedScenario()}

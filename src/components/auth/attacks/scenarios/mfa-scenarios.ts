@@ -118,6 +118,176 @@ async function defendedLoginStep2(challengeId: string, code: string) {
         kind: "defensive",
       },
     ],
+    // Phase 2 PoC: live attack 化された 5 件目 = Phase 2 完結シナリオ。
+    // 学習者は username + (任意 secret) を送信し、victim-web が現在時刻 OTP を計算 → 同じ OTP で
+    // 2 連続検証 → 両方 success を 1 リクエストで返す挙動を観察できる。leakedToAttacker フィールドで
+    // 「攻撃者が乗っ取りで取得できる擬似個人情報」を可視化する (DESIGN/35 §1)。
+    mode: "live",
+    liveTemplate: {
+      target: "victim-web",
+      method: "POST",
+      path: "/totp/login-replay",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      // secret 省略時は victim 内部の DEMO_TOTP_SECRET を使用。
+      // 学習者は username を seed_alice / seed_bob / seed_admin に変えて漏えい対象を切り替え可能。
+      body: JSON.stringify({ username: "seed_alice" }),
+    },
+    // Phase 2 PR-4 で初導入された AttackStoryboard (DESIGN/35) の 7 シーンテンプレ。
+    // 攻撃の物語進行を紙芝居化し、leakedToAttacker の中身を data-leak visual で可視化する。
+    storyDefaultDurationMs: 4000,
+    story: [
+      {
+        id: "scene-1-setup",
+        title: "Target: alice's TOTP-protected account",
+        titleJa: "標的: alice の TOTP 保護アカウント",
+        actor: "attacker",
+        speech: {
+          ja: "alice のアカウントを狙う。MFA を破る方法を考えよう。",
+          en: "Targeting alice's account. Need to bypass her MFA.",
+        },
+        narration: {
+          ja: "攻撃者は被害者 alice のアカウントを乗っ取ろうとしています。alice は TOTP (RFC 6238) で MFA を有効化しており、ログインに 6 桁の OTP が要ります。",
+          en: "The attacker plans to take over alice's account. She has MFA enabled via TOTP (RFC 6238), requiring a 6-digit code on login.",
+        },
+        highlightActors: ["victim"],
+      },
+      {
+        id: "scene-2-observation",
+        title: "Shoulder-surfing the OTP",
+        titleJa: "OTP をショルダーサーフィン",
+        actor: "attacker",
+        speech: {
+          ja: "カフェの隣席で alice の画面が見えた。OTP は 123456 だ。",
+          en: "Caught alice's screen at the cafe. OTP is 123456.",
+        },
+        narration: {
+          ja: "TOTP は 30 秒ごとに更新されますが、±1 窓を許容するため最大 90 秒間は有効です。攻撃者はこの窓内に同じコードを再送する必要があります (RFC 6238 §5.2 はリプレイ対策を実装者に委ねています)。",
+          en: "TOTP rotates every 30s but a ±1 window leaves it valid for up to 90s. The attacker must replay within that window (RFC 6238 §5.2 leaves replay defense to the implementer).",
+        },
+        visual: {
+          type: "ascii",
+          content:
+            "alice's authenticator screen:\n" +
+            "  ┌──────────────┐\n" +
+            "  │   1 2 3 4 5 6 │   ← 攻撃者が観測\n" +
+            "  │ valid for ~30s│\n" +
+            "  └──────────────┘",
+        },
+      },
+      {
+        id: "scene-3-victim-login",
+        title: "Victim authenticates normally",
+        titleJa: "被害者が通常通りログイン",
+        actor: "victim",
+        speech: {
+          ja: "ログインしよう。OTP は 123456 だ。",
+          en: "Logging in. My OTP is 123456.",
+        },
+        narration: {
+          ja: "被害者 alice は通常通り MFA エンドポイントに OTP を送信し、サーバは「一致」と判定してセッションを発行します。ここまでは正規挙動です。",
+          en: "Alice submits her OTP to the MFA endpoint as usual. The server matches it and issues a session. So far this is normal behavior.",
+        },
+        visual: {
+          type: "sequence-arrow",
+          from: "victim",
+          to: "victim-srv",
+          label: "POST /totp/login-replay (alice's first login)",
+          labelJa: "POST /totp/login-replay (alice の正規ログイン)",
+          direction: "request",
+        },
+        highlightActors: ["victim-srv"],
+      },
+      {
+        id: "scene-4-replay",
+        title: "Attacker replays the same OTP",
+        titleJa: "攻撃者が同じ OTP でリプレイ",
+        actor: "attacker",
+        speech: {
+          ja: "90 秒以内に同じ OTP を送る。orchestrator を経由して victim-web に直接届ける。",
+          en: "Replaying the same OTP within 90s. Going through orchestrator to victim-web.",
+        },
+        narration: {
+          ja: "攻撃者は orchestrator/exec エンドポイント経由で同じ secret + 同じ counter の OTP を再送します。raw HTTP リクエストの body は学習者が編集できるようになっています。",
+          en: "The attacker re-sends the same OTP via orchestrator/exec, computed from the same secret + counter. The raw HTTP body is editable by the learner.",
+        },
+        visual: {
+          type: "http-request",
+          sourceRef: { pair: "orchestratorToVictim", side: "request", field: "line" },
+          highlight: [
+            {
+              target: "header",
+              match: "Content-Type",
+              tooltipJa: "JSON ボディとして username + secret を送信",
+              tooltip: "JSON body carrying username + secret",
+            },
+          ],
+        },
+      },
+      {
+        id: "scene-5-server-fails",
+        title: "Server fails to detect the replay",
+        titleJa: "サーバがリプレイを検知できない",
+        actor: "victim-srv",
+        speech: {
+          ja: "OTP は ±1 窓内で一致する。used_otps テーブル無いから、これも valid だ。",
+          en: "OTP matches within ±1 window. No used_otps table, so this one is valid too.",
+        },
+        narration: {
+          ja: "victim-web は 1 回目の検証で counter を記録せず、2 回目も同じ counter で検証成功してしまいます。CWE-294 はまさにこの「実装者がリプレイ防御を忘れた」状態を指しています。",
+          en: "victim-web does not persist (user_id, counter) on first verify, so the second call passes the same counter and returns success. This is exactly the CWE-294 'implementer forgot replay defense' pattern.",
+        },
+        visual: {
+          type: "data-leak",
+          label: "Computed OTP (X-Computed-OTP)",
+          labelJa: "計算された OTP (X-Computed-OTP)",
+          valueRef: {
+            pair: "orchestratorToVictim",
+            side: "response",
+            field: { header: "X-Computed-OTP" },
+          },
+          severity: "high",
+        },
+      },
+      {
+        id: "scene-6-leak",
+        title: "Account takeover succeeds",
+        titleJa: "アカウント乗っ取り成立",
+        actor: "attacker",
+        speech: {
+          ja: "alice として認証された。残高もメールも API キーも全部読める。",
+          en: "Authenticated as alice. Balance, email, API key — all mine to read.",
+        },
+        narration: {
+          ja: "victim から返ってきたレスポンスには「攻撃者が今この瞬間奪取したデータ」がそのまま入っています。実環境ではこのまま二要素認証完了 → 全ページにアクセス可能になります。",
+          en: "The response body contains exactly what the attacker just exfiltrated. In production this would complete the second factor and grant full account access.",
+        },
+        visual: {
+          type: "data-leak",
+          label: "Response body (leakedToAttacker)",
+          labelJa: "レスポンスボディ (leakedToAttacker)",
+          valueRef: { pair: "orchestratorToVictim", side: "response", field: "body" },
+          severity: "critical",
+        },
+      },
+      {
+        id: "scene-7-defense",
+        title: "Defense: record (user_id, counter)",
+        titleJa: "防御: (user_id, counter) を記録する",
+        actor: "narrator",
+        narration: {
+          ja: "堅牢実装は検証成功時に (user_id, counter) を used_otps テーブルへ記録し、同じ counter の再使用を拒否します。RFC 6238 §5.2 と NIST SP 800-63B §5.1.4.2 が同等の対策を勧告しています。",
+          en: "A defended server records (user_id, counter) on verification success and rejects any subsequent use of the same counter. RFC 6238 §5.2 and NIST SP 800-63B §5.1.4.2 prescribe the same control.",
+        },
+        visual: {
+          type: "code-defense",
+          codeHintIndex: 2,
+          lineHighlight: [9, 14],
+        },
+      },
+    ],
   },
   {
     id: "mfa-time-window-too-wide",

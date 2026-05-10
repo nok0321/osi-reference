@@ -35,6 +35,7 @@ safety-reviewed: false
 - `DataFlowPanel`: 4 番目のタブ "Sequence" を追加し `SequenceDiagramView` を内包
 - ~~`AttackStepTimeline`: `mode: "live"` では orchestrator レスポンスの `rawExchange` から steps を生成~~ → **PR-1 で obsolete**: orchestrator が live 経路でも probe/exploit|blocked/verify の 3 ステップを生成し `result.steps[]` に詰めて返すため、フロント派生は冗長。raw bytes の視覚化は `SequenceDiagramView` が担当する。詳細は §4.1 参照。
 - `AttackResultBanner` / `AttackDefensePanel`: 変更なし (両モード共通)
+- `AttackStoryView` (DESIGN/35): **共存** — `AttackPanel` 内で `RawHttpComposer` の下に `AttackStoryView` を表示し、既存の `AttackStepTimeline` は `<details>` で折りたたむ (story 持ちシナリオのみ)。story 未定義シナリオでは従来通り `AttackStepTimeline` を展開表示する。`SequenceDiagramView` (機械的事実) と `AttackStoryView` (物語的解釈) は補完関係 (DESIGN/35 §14.1)。Phase 2 PR-4 で初導入
 
 ---
 
