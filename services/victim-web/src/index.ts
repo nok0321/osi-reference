@@ -16,6 +16,7 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { jwtVulnRoutes } from "./routes/jwt-vuln.js";
 import { oauthVulnRoutes } from "./routes/oauth-vuln.js";
+import { rbacVulnRoutes } from "./routes/rbac-vuln.js";
 
 const app = new Hono();
 
@@ -25,6 +26,7 @@ app.get("/health", (c) =>
 
 app.route("/jwt", jwtVulnRoutes);
 app.route("/oauth", oauthVulnRoutes);
+app.route("/rbac", rbacVulnRoutes);
 
 // PORT は docker container 環境用 (compose で PORT=4001 を渡す)。
 // host で `dev:no-docker` を実行すると vite が PORT=3000 を環境にセットするため、

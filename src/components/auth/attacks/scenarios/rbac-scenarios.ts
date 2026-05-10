@@ -85,6 +85,21 @@ app.get("/users/me", async (c) => {
         kind: "defensive",
       },
     ],
+    // Phase 2 PoC: live attack 化された 3 件目のシナリオ。
+    // 学習者は victimId を 1 (alice) / 2 (bob) / 4 (admin) に書き換えて、
+    // 攻撃者 charlie (id=3) として他ユーザーのフルレコードが返ることを観察できる。
+    // 堅牢実装側 (server/routes/rbac.ts の defended パス) は WHERE owner_id チェックで 403 を返す。
+    mode: "live",
+    liveTemplate: {
+      target: "victim-web",
+      method: "POST",
+      // 注: victimId が attacker (charlie=3) ではなく victim (alice=1) を指している。
+      // 学習者は victimId を 3 に戻すと「自分のデータ」、別の id にすると「他人のデータ」が
+      // どちらも 200 で返ることを観察し、所有権チェックの欠如を理解できる。
+      path: "/rbac/users/profile",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ victimId: 1 }),
+    },
   },
   {
     id: "rbac-horizontal-privilege-escalation",
